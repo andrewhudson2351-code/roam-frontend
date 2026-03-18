@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 
 const API = "https://roam-backend-production.up.railway.app";
-const MAPS_KEY = "AIzaSyBXz5JBJaWQSL77F9WwHQSJANa5Sj5Amlk";
+const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
 
 async function api(path, options = {}, token = null) {
   const headers = { "Content-Type": "application/json" };
