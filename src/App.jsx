@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 const API = "https://roam-backend-production.up.railway.app";
+const MAPS_KEY = "AIzaSyBXz5JBJaWQSL77F9WwHQSJANa5Sj5Amlk";
 
 async function api(path, options = {}, token = null) {
   const headers = { "Content-Type": "application/json" };
@@ -27,6 +28,31 @@ function timeAgo(dateStr) {
 }
 const COLORS = ["#ff3366","#f59e0b","#8b5cf6","#06b6d4","#10b981","#ec4899"];
 const EMOJIS = ["🔥","🍺","🎵","🍸","🎸","💃","🎉","🌙"];
+
+const DARK_MAP_STYLE = [
+  { elementType: "geometry", stylers: [{ color: "#0d1117" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "rgba(255,255,255,0.4)" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#0d1117" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
+  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#1f1f35" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#252545" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1a1a30" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a0a18" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "rgba(255,255,255,0.3)" }] },
+];
+
+// Load Google Maps script
+function loadGoogleMaps() {
+  return new Promise((resolve) => {
+    if (window.google?.maps) { resolve(); return; }
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
+    script.onload = resolve;
+    document.head.appendChild(script);
+  });
+}
 
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
@@ -81,92 +107,167 @@ function HeatmapScreen({ token }) {
   const [activeVenue, setActiveVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pulse, setPulse] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markersRef = useRef([]);
+  const circlesRef = useRef([]);
+  const infoWindowRef = useRef(null);
 
   useEffect(() => {
-    api("/api/venues").then(data => { if (Array.isArray(data)) setVenues(data); setLoading(false); });
+    loadGoogleMaps().then(() => setMapReady(true));
     const t = setInterval(() => setPulse(p => !p), 1500);
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (mapReady && mapRef.current && !mapInstanceRef.current) {
+      mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
+        center: { lat: 35.2271, lng: -80.8431 },
+        zoom: 14,
+        styles: DARK_MAP_STYLE,
+        disableDefaultUI: true,
+        zoomControl: false,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      });
+      infoWindowRef.current = new window.google.maps.InfoWindow();
+    }
+  }, [mapReady]);
+
+  useEffect(() => {
+    api("/api/venues").then(data => {
+      if (Array.isArray(data)) { setVenues(data); setLoading(false); }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || venues.length === 0) return;
+    // Clear old markers
+    markersRef.current.forEach(m => m.setMap(null));
+    circlesRef.current.forEach(c => c.setMap(null));
+    markersRef.current = [];
+    circlesRef.current = [];
+
+    const filtered = filter === "All" ? venues : venues.filter(v => v.category === filter);
+
+    filtered.forEach(venue => {
+      const busy = venue.busy_score || 0;
+      const color = getBusyColor(busy);
+      const pos = { lat: parseFloat(venue.latitude), lng: parseFloat(venue.longitude) };
+
+      // Heatmap glow circle
+      const circle = new window.google.maps.Circle({
+        map: mapInstanceRef.current,
+        center: pos,
+        radius: busy > 80 ? 160 : busy > 60 ? 120 : 80,
+        fillColor: color,
+        fillOpacity: 0.18,
+        strokeColor: color,
+        strokeOpacity: 0.35,
+        strokeWeight: 1,
+      });
+      circlesRef.current.push(circle);
+
+      // Custom marker
+      const marker = new window.google.maps.Marker({
+        position: pos,
+        map: mapInstanceRef.current,
+        title: venue.name,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: busy > 80 ? 10 : busy > 60 ? 8 : 6,
+          fillColor: color,
+          fillOpacity: 1,
+          strokeColor: "#fff",
+          strokeWeight: 1.5,
+        },
+      });
+
+      marker.addListener("click", () => {
+        setActiveVenue(venue);
+        mapInstanceRef.current.panTo(pos);
+      });
+
+      markersRef.current.push(marker);
+    });
+  }, [venues, filter, mapReady]);
+
   async function reportCrowd(venueId, level) {
     await api(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
-    api("/api/venues").then(data => { if (Array.isArray(data)) setVenues(data); });
+    const data = await api("/api/venues");
+    if (Array.isArray(data)) setVenues(data);
+    setActiveVenue(null);
   }
 
   const filters = ["All", "Bar", "Club", "Venue"];
   const filtered = filter === "All" ? venues : venues.filter(v => v.category === filter);
 
-  const positions = {};
-  filtered.forEach((v, i) => {
-    const base = { "South End": [50, 55], "NoDa": [70, 35], "Uptown": [35, 30] }[v.neighborhood] || [50, 50];
-    positions[v.id] = [base[0] + (i % 3) * 12 - 6, base[1] + Math.floor(i / 3) * 14 - 7];
-  });
-
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ padding: "12px 16px 8px", display: "flex", gap: 8 }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+      {/* Filter bar */}
+      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 8 }}>
         {filters.map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 600, background: filter === f ? "#ff3366" : "rgba(255,255,255,0.08)", color: filter === f ? "#fff" : "rgba(255,255,255,0.6)", transition: "all 0.2s" }}>{f}</button>
+          <button key={f} onClick={() => setFilter(f)} style={{
+            padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 600,
+            background: filter === f ? "#ff3366" : "rgba(10,10,16,0.85)",
+            color: filter === f ? "#fff" : "rgba(255,255,255,0.7)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+            backdropFilter: "blur(8px)",
+            transition: "all 0.2s"
+          }}>{f}</button>
         ))}
       </div>
-      <div style={{ flex: 1, position: "relative", margin: "0 16px 12px", borderRadius: 20, overflow: "hidden", background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)" }}>
-        {[...Array(8)].map((_, i) => <div key={i} style={{ position: "absolute", left: `${i * 14}%`, top: 0, bottom: 0, borderLeft: "1px solid rgba(255,255,255,0.03)" }} />)}
-        {[...Array(10)].map((_, i) => <div key={i} style={{ position: "absolute", top: `${i * 11}%`, left: 0, right: 0, borderTop: "1px solid rgba(255,255,255,0.03)" }} />)}
-        <div style={{ position: "absolute", top: "18%", left: "28%", fontSize: 9, color: "rgba(255,255,255,0.2)", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase" }}>UPTOWN</div>
-        <div style={{ position: "absolute", top: "52%", left: "42%", fontSize: 9, color: "rgba(255,255,255,0.2)", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase" }}>SOUTH END</div>
-        <div style={{ position: "absolute", top: "28%", left: "64%", fontSize: 9, color: "rgba(255,255,255,0.2)", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase" }}>NODA</div>
-        {loading && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: 13 }}>Loading venues...</div>}
-        {filtered.map((v) => {
-          const [left, top] = positions[v.id] || [50, 50];
-          const busy = v.busy_score || 0;
-          return (
-            <div key={v.id}>
-              <div style={{ position: "absolute", left: `${left}%`, top: `${top}%`, width: busy > 80 ? 80 : busy > 60 ? 60 : 45, height: busy > 80 ? 80 : busy > 60 ? 60 : 45, borderRadius: "50%", background: `radial-gradient(circle, ${getBusyColor(busy)}44 0%, transparent 70%)`, transform: "translate(-50%, -50%)", pointerEvents: "none" }} />
-              <div onClick={() => setActiveVenue(activeVenue?.id === v.id ? null : v)} style={{ position: "absolute", left: `${left}%`, top: `${top}%`, transform: "translate(-50%, -50%)", cursor: "pointer", zIndex: 10 }}>
-                <div style={{ width: activeVenue?.id === v.id ? 14 : 10, height: activeVenue?.id === v.id ? 14 : 10, borderRadius: "50%", background: getBusyColor(busy), border: `2px solid ${activeVenue?.id === v.id ? "#fff" : "rgba(255,255,255,0.4)"}`, boxShadow: `0 0 ${busy > 80 ? 16 : 8}px ${getBusyColor(busy)}`, transition: "all 0.2s" }} />
-                {activeVenue?.id === v.id && (
-                  <div style={{ position: "absolute", bottom: 18, left: "50%", transform: "translateX(-50%)", background: "#1a1a2e", border: `1px solid ${getBusyColor(busy)}44`, borderRadius: 10, padding: "8px 12px", minWidth: 150, zIndex: 20, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{v.name}</div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginBottom: 4 }}>{v.neighborhood}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: getBusyColor(busy) }} />
-                      <span style={{ fontSize: 11, color: getBusyColor(busy), fontWeight: 700 }}>{getBusyLabel(busy)} · {busy}%</span>
-                    </div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 4 }}>How busy is it?</div>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {[["😴", 20], ["🙂", 50], ["🔥", 85]].map(([emoji, level]) => (
-                        <button key={level} onClick={(e) => { e.stopPropagation(); reportCrowd(v.id, level); }} style={{ flex: 1, padding: "4px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.06)", cursor: "pointer", fontSize: 14 }}>{emoji}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        <div style={{ position: "absolute", top: 12, right: 12, display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.7)", borderRadius: 20, padding: "5px 10px", border: "1px solid rgba(255,51,102,0.3)" }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff3366", boxShadow: "0 0 8px #ff3366", opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
-          <span style={{ fontSize: 10, color: "#ff3366", fontWeight: 700, letterSpacing: 1 }}>LIVE</span>
-        </div>
+
+      {/* Live badge */}
+      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 6, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "5px 10px", border: "1px solid rgba(255,51,102,0.3)", backdropFilter: "blur(8px)" }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff3366", boxShadow: "0 0 8px #ff3366", opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
+        <span style={{ fontSize: 10, color: "#ff3366", fontWeight: 700, letterSpacing: 1 }}>LIVE</span>
       </div>
-      <div style={{ padding: "0 16px", marginBottom: 8 }}>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, marginBottom: 8, letterSpacing: 1, textTransform: "uppercase" }}>{filtered.length} spots nearby</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {filtered.slice(0, 3).map(v => (
-            <div key={v.id} onClick={() => setActiveVenue(v)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{v.name}</div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{v.neighborhood} · {v.category}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ fontSize: 11, color: getBusyColor(v.busy_score || 0), fontWeight: 700 }}>{v.busy_score || 0}%</div>
-                <div style={{ background: getBusyColor(v.busy_score || 0) + "33", border: `1px solid ${getBusyColor(v.busy_score || 0)}44`, borderRadius: 8, padding: "3px 8px", fontSize: 10, color: getBusyColor(v.busy_score || 0), fontWeight: 700 }}>{getBusyLabel(v.busy_score || 0)}</div>
-              </div>
-            </div>
-          ))}
-          {filtered.length === 0 && !loading && <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: 13, padding: 20 }}>No venues yet — add some via the dashboard!</div>}
+
+      {/* Google Map */}
+      <div ref={mapRef} style={{ flex: 1 }} />
+
+      {/* Loading overlay */}
+      {loading && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,10,16,0.7)", zIndex: 5 }}>
+          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Loading venues...</div>
         </div>
+      )}
+
+      {/* Venue list strip */}
+      <div style={{ position: "absolute", bottom: activeVenue ? 200 : 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
+        {filtered.slice(0, 6).map(v => (
+          <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }}
+            style={{ flexShrink: 0, background: "rgba(10,10,16,0.9)", borderRadius: 12, padding: "8px 12px", border: `1px solid ${getBusyColor(v.busy_score || 0)}44`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{v.name}</div>
+            <div style={{ fontSize: 10, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
+          </div>
+        ))}
       </div>
+
+      {/* Selected venue card */}
+      {activeVenue && (
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, background: "#1a1a2e", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: "20px 20px 28px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <button onClick={() => setActiveVenue(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.5)", fontSize: 18 }}>✕</button>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 2 }}>{activeVenue.name}</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>{activeVenue.neighborhood} · {activeVenue.address}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: getBusyColor(activeVenue.busy_score || 0), boxShadow: `0 0 8px ${getBusyColor(activeVenue.busy_score || 0)}` }} />
+            <span style={{ fontSize: 13, color: getBusyColor(activeVenue.busy_score || 0), fontWeight: 700 }}>{getBusyLabel(activeVenue.busy_score || 0)} · {activeVenue.busy_score || 0}% capacity</span>
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>How busy is it right now?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[["😴", 20, "Quiet"], ["🙂", 50, "Busy"], ["🔥", 85, "Packed"]].map(([emoji, level, label]) => (
+              <button key={level} onClick={() => reportCrowd(activeVenue.id, level)} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", cursor: "pointer", fontFamily: "inherit" }}>
+                <div style={{ fontSize: 22 }}>{emoji}</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -206,8 +307,8 @@ function StoriesScreen({ token, user }) {
       </div>
       {active && (
         <div onClick={() => setActive(null)} style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: "85%", borderRadius: 24, overflow: "hidden", background: "#0d1117", border: `1px solid ${COLORS[active.id % 6]}44` }}>
-            <div style={{ height: 180, background: `linear-gradient(135deg, ${COLORS[active.id % 6]}44, #0d1117)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "85%", borderRadius: 24, overflow: "hidden", background: "#0d1117", border: `1px solid ${COLORS[0]}44` }}>
+            <div style={{ height: 180, background: `linear-gradient(135deg, ${COLORS[0]}44, #0d1117)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <div style={{ fontSize: 52 }}>{active.emoji || "📸"}</div>
               <div style={{ fontSize: 14, color: "#fff", fontWeight: 700 }}>{active.venues?.name || "A venue"}</div>
             </div>
