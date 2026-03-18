@@ -78,7 +78,10 @@ function AuthScreen({ onAuth }) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32 }}>
       <div style={{ fontSize: 48, marginBottom: 8 }}>🌍</div>
       <div style={{ fontSize: 32, fontWeight: 900, color: "#fff", marginBottom: 4 }}>roam</div>
-      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 32 }}>Charlotte nightlife, live</div>
+      <div style={{ fontSize: 17, color: "rgba(255,255,255,0.6)", marginBottom: 32, fontFamily: "'Dancing Script', cursive", letterSpacing: 0.5, textAlign: "center", lineHeight: 1.4 }}>
+        "When in Roam, Do as the Romans Do"
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');`}</style>
+      </div>
       <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
         {mode === "register" && (
           <input placeholder="Username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
