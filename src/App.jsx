@@ -140,7 +140,10 @@ function HeatmapScreen({ token }) {
   }, [mapReady]);
 
   useEffect(() => {
-    api("/api/venues").then(data => {
+const center = mapInstanceRef.current?.getCenter();
+const lat = center ? center.lat() : 35.2271;
+const lng = center ? center.lng() : -80.8431;
+api(`/api/venues?lat=${lat}&lng=${lng}&radius=0.15`).then(data => {
       if (Array.isArray(data)) { setVenues(data); setLoading(false); }
     });
   }, []);
