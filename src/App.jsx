@@ -3,34 +3,35 @@ import React, { useState, useEffect, useRef } from "react";
 const API = "https://roam-backend-production.up.railway.app";
 const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
 
-async function api(path, options = {}, token = null) {
-  const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${API}${path}`, { ...options, headers });
-  return res.json();
-}
+const CITIES = [
+  { name: "Charlotte",        lat: 35.2271, lng: -80.8431 },
+  { name: "Raleigh",          lat: 35.7796, lng: -78.6382 },
+  { name: "Atlanta",          lat: 33.7490, lng: -84.3880 },
+  { name: "Nashville",        lat: 36.1627, lng: -86.7816 },
+  { name: "Washington DC",    lat: 38.9072, lng: -77.0369 },
+  { name: "Baltimore",        lat: 39.2904, lng: -76.6122 },
+  { name: "Philadelphia",     lat: 39.9526, lng: -75.1652 },
+  { name: "New York",         lat: 40.7128, lng: -74.0060 },
+  { name: "Boston",           lat: 42.3601, lng: -71.0589 },
+  { name: "Miami",            lat: 25.7617, lng: -80.1918 },
+  { name: "Saratoga Springs", lat: 43.0831, lng: -73.7846 },
+];
 
 function getCityFromCoords(lat, lng) {
-  const cities = [
-    { name: "Charlotte", lat: 35.2271, lng: -80.8431 },
-    { name: "Raleigh", lat: 35.7796, lng: -78.6382 },
-    { name: "Atlanta", lat: 33.7490, lng: -84.3880 },
-    { name: "Nashville", lat: 36.1627, lng: -86.7816 },
-    { name: "Washington DC", lat: 38.9072, lng: -77.0369 },
-    { name: "Baltimore", lat: 39.2904, lng: -76.6122 },
-    { name: "Philadelphia", lat: 39.9526, lng: -75.1652 },
-    { name: "New York", lat: 40.7128, lng: -74.0060 },
-    { name: "Boston", lat: 42.3601, lng: -71.0589 },
-    { name: "Miami", lat: 25.7617, lng: -80.1918 },
-    { name: "Saratoga Springs", lat: 43.0831, lng: -73.7846 },
-  ];
-  let closest = cities[0];
+  let closest = CITIES[0];
   let minDist = Infinity;
-  cities.forEach(c => {
+  CITIES.forEach(c => {
     const dist = Math.sqrt(Math.pow(c.lat - lat, 2) + Math.pow(c.lng - lng, 2));
     if (dist < minDist) { minDist = dist; closest = c; }
   });
   return closest.name;
+}
+
+async function apiFetch(path, options = {}, token = null) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API}${path}`, { ...options, headers });
+  return res.json();
 }
 
 function getBusyColor(busy) {
@@ -49,6 +50,7 @@ function timeAgo(dateStr) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
 }
+
 const COLORS = ["#ff3366","#f59e0b","#8b5cf6","#06b6d4","#10b981","#ec4899"];
 const EMOJIS = ["🔥","🍺","🎵","🍸","🎸","💃","🎉","🌙"];
 
@@ -59,14 +61,11 @@ const DARK_MAP_STYLE = [
   { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
   { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#1f1f35" }] },
   { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#252545" }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1a1a30" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a0a18" }] },
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "rgba(255,255,255,0.3)" }] },
 ];
 
-// Load Google Maps script
 function loadGoogleMaps() {
   return new Promise((resolve) => {
     if (window.google?.maps) { resolve(); return; }
@@ -77,6 +76,7 @@ function loadGoogleMaps() {
   });
 }
 
+// ── Auth Screen ──────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", username: "" });
@@ -88,7 +88,7 @@ function AuthScreen({ onAuth }) {
     try {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body = mode === "login" ? { email: form.email, password: form.password } : form;
-      const data = await api(endpoint, { method: "POST", body: JSON.stringify(body) });
+      const data = await apiFetch(endpoint, { method: "POST", body: JSON.stringify(body) });
       if (data.error) { setError(data.error); setLoading(false); return; }
       onAuth(data.user, data.token);
     } catch {
@@ -127,56 +127,60 @@ function AuthScreen({ onAuth }) {
   );
 }
 
+// ── Heatmap Screen ───────────────────────────────
 function HeatmapScreen({ token }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
   const [activeVenue, setActiveVenue] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentCity, setCurrentCity] = useState("Charlotte");
   const [pulse, setPulse] = useState(true);
-  const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
   const circlesRef = useRef([]);
-  const infoWindowRef = useRef(null);
+  const idleListenerRef = useRef(null);
 
+  // Load Google Maps
   useEffect(() => {
-    loadGoogleMaps().then(() => setMapReady(true));
-    const t = setInterval(() => setPulse(p => !p), 1500);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (mapReady && mapRef.current && !mapInstanceRef.current) {
+    loadGoogleMaps().then(() => {
+      if (!mapRef.current) return;
       mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
         center: { lat: 35.2271, lng: -80.8431 },
         zoom: 14,
         styles: DARK_MAP_STYLE,
         disableDefaultUI: true,
-        zoomControl: false,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
+        zoomControl: true,
+        gestureHandling: "greedy",
       });
-      infoWindowRef.current = new window.google.maps.InfoWindow();
-    }
-  }, [mapReady]);
 
-useEffect(() => {
-  if (mapReady && mapInstanceRef.current) {
-    mapInstanceRef.current.addListener("idle", () => {
-      const center = mapInstanceRef.current.getCenter();
-      const cityParam = getCityFromCoords(center.lat(), center.lng());
-      api(`/api/venues?city=${cityParam}`).then(data => {
-        if (Array.isArray(data)) { setVenues(data); setLoading(false); }
+      // Load venues on map idle (after pan/zoom stops)
+      idleListenerRef.current = mapInstanceRef.current.addListener("idle", () => {
+        const center = mapInstanceRef.current.getCenter();
+        const city = getCityFromCoords(center.lat(), center.lng());
+        setCurrentCity(city);
+        loadVenues(city);
       });
     });
-  }
-}, [mapReady]);
 
+    const t = setInterval(() => setPulse(p => !p), 1500);
+    return () => {
+      clearInterval(t);
+      if (idleListenerRef.current) window.google?.maps.event.removeListener(idleListenerRef.current);
+    };
+  }, []);
+
+  async function loadVenues(city = "Charlotte") {
+    setLoading(true);
+    const data = await apiFetch(`/api/venues?city=${encodeURIComponent(city)}`);
+    if (Array.isArray(data)) { setVenues(data); }
+    setLoading(false);
+  }
+
+  // Draw markers when venues or filter changes
   useEffect(() => {
-    if (!mapInstanceRef.current || venues.length === 0) return;
-    // Clear old markers
+    if (!mapInstanceRef.current || !window.google?.maps) return;
+
     markersRef.current.forEach(m => m.setMap(null));
     circlesRef.current.forEach(c => c.setMap(null));
     markersRef.current = [];
@@ -188,8 +192,8 @@ useEffect(() => {
       const busy = venue.busy_score || 0;
       const color = getBusyColor(busy);
       const pos = { lat: parseFloat(venue.latitude), lng: parseFloat(venue.longitude) };
+      if (isNaN(pos.lat) || isNaN(pos.lng)) return;
 
-      // Heatmap glow circle
       const circle = new window.google.maps.Circle({
         map: mapInstanceRef.current,
         center: pos,
@@ -202,7 +206,6 @@ useEffect(() => {
       });
       circlesRef.current.push(circle);
 
-      // Custom marker
       const marker = new window.google.maps.Marker({
         position: pos,
         map: mapInstanceRef.current,
@@ -224,38 +227,60 @@ useEffect(() => {
 
       markersRef.current.push(marker);
     });
-  }, [venues, filter, mapReady]);
+  }, [venues, filter]);
 
   async function reportCrowd(venueId, level) {
-    await api(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
-    const data = await api("/api/venues");
-    if (Array.isArray(data)) setVenues(data);
+    await apiFetch(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
+    loadVenues(currentCity);
     setActiveVenue(null);
   }
 
-  const filters = ["All", "Bar", "Club", "Venue"];
+  function goToCity(city) {
+    const c = CITIES.find(c => c.name === city);
+    if (c && mapInstanceRef.current) {
+      mapInstanceRef.current.panTo({ lat: c.lat, lng: c.lng });
+      mapInstanceRef.current.setZoom(14);
+    }
+  }
+
+  const filters = ["All", "Bar", "Club", "Restaurant"];
   const filtered = filter === "All" ? venues : venues.filter(v => v.category === filter);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
       {/* Filter bar */}
-      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 8 }}>
+      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%" }}>
         {filters.map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
-            padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 600,
+            padding: "6px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 600,
             background: filter === f ? "#ff3366" : "rgba(10,10,16,0.85)",
             color: filter === f ? "#fff" : "rgba(255,255,255,0.7)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
-            backdropFilter: "blur(8px)",
-            transition: "all 0.2s"
+            boxShadow: "0 2px 8px rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", transition: "all 0.2s"
           }}>{f}</button>
         ))}
       </div>
 
-      {/* Live badge */}
-      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 6, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "5px 10px", border: "1px solid rgba(255,51,102,0.3)", backdropFilter: "blur(8px)" }}>
-        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff3366", boxShadow: "0 0 8px #ff3366", opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
-        <span style={{ fontSize: 10, color: "#ff3366", fontWeight: 700, letterSpacing: 1 }}>LIVE</span>
+      {/* Live badge + city name */}
+      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "5px 10px", border: "1px solid rgba(255,51,102,0.3)", backdropFilter: "blur(8px)" }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff3366", boxShadow: "0 0 8px #ff3366", opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
+          <span style={{ fontSize: 10, color: "#ff3366", fontWeight: 700, letterSpacing: 1 }}>LIVE</span>
+        </div>
+        <div style={{ background: "rgba(10,10,16,0.85)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)" }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>{currentCity}</span>
+        </div>
+      </div>
+
+      {/* City jump buttons */}
+      <div style={{ position: "absolute", bottom: activeVenue ? 220 : 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
+        {CITIES.map(c => (
+          <button key={c.name} onClick={() => goToCity(c.name)} style={{
+            flexShrink: 0, padding: "5px 10px", borderRadius: 12, border: "none", cursor: "pointer",
+            background: currentCity === c.name ? "rgba(255,51,102,0.8)" : "rgba(10,10,16,0.85)",
+            color: "#fff", fontSize: 10, fontWeight: 600, fontFamily: "inherit",
+            backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(0,0,0,0.4)"
+          }}>{c.name.split(",")[0]}</button>
+        ))}
       </div>
 
       {/* Google Map */}
@@ -263,31 +288,33 @@ useEffect(() => {
 
       {/* Loading overlay */}
       {loading && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,10,16,0.7)", zIndex: 5 }}>
-          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Loading venues...</div>
+        <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)" }}>
+          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Loading venues...</span>
         </div>
       )}
 
-      {/* Venue list strip */}
-      <div style={{ position: "absolute", bottom: activeVenue ? 200 : 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
-        {filtered.slice(0, 6).map(v => (
-          <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }}
-            style={{ flexShrink: 0, background: "rgba(10,10,16,0.9)", borderRadius: 12, padding: "8px 12px", border: `1px solid ${getBusyColor(v.busy_score || 0)}44`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{v.name}</div>
-            <div style={{ fontSize: 10, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
-          </div>
-        ))}
-      </div>
+      {/* Venue strip */}
+      {!activeVenue && filtered.length > 0 && (
+        <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
+          {filtered.slice(0, 8).map(v => (
+            <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }}
+              style={{ flexShrink: 0, background: "rgba(10,10,16,0.9)", borderRadius: 12, padding: "8px 12px", border: `1px solid ${getBusyColor(v.busy_score || 0)}44`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{v.name}</div>
+              <div style={{ fontSize: 10, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Selected venue card */}
       {activeVenue && (
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, background: "#1a1a2e", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: "20px 20px 28px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <button onClick={() => setActiveVenue(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.5)", fontSize: 18 }}>✕</button>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, background: "#1a1a2e", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: "20px 20px 32px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <button onClick={() => setActiveVenue(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.5)", fontSize: 20 }}>✕</button>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 2 }}>{activeVenue.name}</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>{activeVenue.neighborhood} · {activeVenue.address}</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>{activeVenue.neighborhood} · {activeVenue.city}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: getBusyColor(activeVenue.busy_score || 0), boxShadow: `0 0 8px ${getBusyColor(activeVenue.busy_score || 0)}` }} />
-            <span style={{ fontSize: 13, color: getBusyColor(activeVenue.busy_score || 0), fontWeight: 700 }}>{getBusyLabel(activeVenue.busy_score || 0)} · {activeVenue.busy_score || 0}% capacity</span>
+            <span style={{ fontSize: 13, color: getBusyColor(activeVenue.busy_score || 0), fontWeight: 700 }}>{getBusyLabel(activeVenue.busy_score || 0)} · {activeVenue.busy_score || 0}%</span>
           </div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>How busy is it right now?</div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -304,7 +331,8 @@ useEffect(() => {
   );
 }
 
-function StoriesScreen({ token, user }) {
+// ── Stories Screen ───────────────────────────────
+function StoriesScreen({ token }) {
   const [stories, setStories] = useState([]);
   const [active, setActive] = useState(null);
   const [liked, setLiked] = useState({});
@@ -313,21 +341,21 @@ function StoriesScreen({ token, user }) {
   const [posting, setPosting] = useState(false);
 
   useEffect(() => {
-    api("/api/stories", {}, token).then(data => { if (Array.isArray(data)) setStories(data); setLoading(false); });
+    apiFetch("/api/stories", {}, token).then(data => { if (Array.isArray(data)) setStories(data); setLoading(false); });
   }, []);
 
   async function postStory() {
     if (!newCaption.trim()) return;
     setPosting(true);
     const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
-    await api("/api/stories", { method: "POST", body: JSON.stringify({ caption: newCaption, emoji, visibility: "public" }) }, token);
-    const data = await api("/api/stories", {}, token);
+    await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ caption: newCaption, emoji, visibility: "public" }) }, token);
+    const data = await apiFetch("/api/stories", {}, token);
     if (Array.isArray(data)) setStories(data);
     setNewCaption(""); setPosting(false);
   }
 
   async function toggleLike(storyId) {
-    await api(`/api/stories/${storyId}/like`, { method: "POST" }, token);
+    await apiFetch(`/api/stories/${storyId}/like`, { method: "POST" }, token);
     setLiked(l => ({ ...l, [storyId]: !l[storyId] }));
   }
 
@@ -377,18 +405,19 @@ function StoriesScreen({ token, user }) {
   );
 }
 
+// ── Deals Screen ─────────────────────────────────
 function DealsScreen({ token }) {
   const [deals, setDeals] = useState([]);
   const [redeemed, setRedeemed] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api("/api/deals").then(data => { if (Array.isArray(data)) setDeals(data); setLoading(false); });
+    apiFetch("/api/deals").then(data => { if (Array.isArray(data)) setDeals(data); setLoading(false); });
   }, []);
 
   async function redeem(deal) {
     if (redeemed[deal.id]) return;
-    const data = await api(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
+    const data = await apiFetch(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
     if (data.success) setRedeemed(r => ({ ...r, [deal.id]: true }));
     else if (data.error) alert(data.error);
   }
@@ -433,6 +462,7 @@ function DealsScreen({ token }) {
   );
 }
 
+// ── Dashboard Screen ─────────────────────────────
 function DashboardScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -442,7 +472,7 @@ function DashboardScreen({ token, user }) {
   const [posting, setPosting] = useState(false);
 
   useEffect(() => {
-    api("/api/venues", {}, token).then(data => {
+    apiFetch("/api/venues", {}, token).then(data => {
       if (Array.isArray(data)) {
         const mine = data.filter(v => v.owner_id === user?.id);
         setVenues(mine);
@@ -454,7 +484,7 @@ function DashboardScreen({ token, user }) {
 
   async function loadDash(venueId) {
     setLoading(true); setSelected(venueId);
-    const data = await api(`/api/dashboard/${venueId}`, {}, token);
+    const data = await apiFetch(`/api/dashboard/${venueId}`, {}, token);
     if (!data.error) setDash(data);
     setLoading(false);
   }
@@ -462,14 +492,14 @@ function DashboardScreen({ token, user }) {
   async function postDeal() {
     if (!newDeal.title || !newDeal.expires_at) return alert("Title and expiry time required.");
     setPosting(true);
-    await api("/api/deals", { method: "POST", body: JSON.stringify({ venue_id: selected, ...newDeal }) }, token);
+    await apiFetch("/api/deals", { method: "POST", body: JSON.stringify({ venue_id: selected, ...newDeal }) }, token);
     setNewDeal({ title: "", detail: "", expires_at: "" });
     loadDash(selected);
     setPosting(false);
   }
 
   async function toggleBoost(enable) {
-    await api(`/api/dashboard/${selected}/boost`, { method: "PATCH", body: JSON.stringify({ enable }) }, token);
+    await apiFetch(`/api/dashboard/${selected}/boost`, { method: "PATCH", body: JSON.stringify({ enable }) }, token);
     loadDash(selected);
   }
 
@@ -540,6 +570,7 @@ function DashboardScreen({ token, user }) {
   );
 }
 
+// ── Main App ─────────────────────────────────────
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
