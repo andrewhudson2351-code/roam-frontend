@@ -10,6 +10,29 @@ async function api(path, options = {}, token = null) {
   return res.json();
 }
 
+function getCityFromCoords(lat, lng) {
+  const cities = [
+    { name: "Charlotte", lat: 35.2271, lng: -80.8431 },
+    { name: "Raleigh", lat: 35.7796, lng: -78.6382 },
+    { name: "Atlanta", lat: 33.7490, lng: -84.3880 },
+    { name: "Nashville", lat: 36.1627, lng: -86.7816 },
+    { name: "Washington DC", lat: 38.9072, lng: -77.0369 },
+    { name: "Baltimore", lat: 39.2904, lng: -76.6122 },
+    { name: "Philadelphia", lat: 39.9526, lng: -75.1652 },
+    { name: "New York", lat: 40.7128, lng: -74.0060 },
+    { name: "Boston", lat: 42.3601, lng: -71.0589 },
+    { name: "Miami", lat: 25.7617, lng: -80.1918 },
+    { name: "Saratoga Springs", lat: 43.0831, lng: -73.7846 },
+  ];
+  let closest = cities[0];
+  let minDist = Infinity;
+  cities.forEach(c => {
+    const dist = Math.sqrt(Math.pow(c.lat - lat, 2) + Math.pow(c.lng - lng, 2));
+    if (dist < minDist) { minDist = dist; closest = c; }
+  });
+  return closest.name;
+}
+
 function getBusyColor(busy) {
   if (busy >= 80) return "#ff3366";
   if (busy >= 60) return "#f59e0b";
@@ -139,14 +162,17 @@ function HeatmapScreen({ token }) {
     }
   }, [mapReady]);
 
-  useEffect(() => {
-const center = mapInstanceRef.current?.getCenter();
-const lat = center ? center.lat() : 35.2271;
-const lng = center ? center.lng() : -80.8431;
-api(`/api/venues?lat=${lat}&lng=${lng}&radius=0.15`).then(data => {
-      if (Array.isArray(data)) { setVenues(data); setLoading(false); }
+useEffect(() => {
+  if (mapReady && mapInstanceRef.current) {
+    mapInstanceRef.current.addListener("idle", () => {
+      const center = mapInstanceRef.current.getCenter();
+      const cityParam = getCityFromCoords(center.lat(), center.lng());
+      api(`/api/venues?city=${cityParam}`).then(data => {
+        if (Array.isArray(data)) { setVenues(data); setLoading(false); }
+      });
     });
-  }, []);
+  }
+}, [mapReady]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || venues.length === 0) return;
