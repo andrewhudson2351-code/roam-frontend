@@ -687,7 +687,8 @@ function DashboardScreen({ token, user }) {
     </div>
   );
 }
-  const [tab, setTab] = useState("map");
+export default function RoamApp() {  
+const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
 
