@@ -406,6 +406,9 @@ function DealsScreen({ token }) {
   );
 }
 
+// ── DashboardScreen with Venue Claim Flow ────────
+// Drop this into App.jsx replacing the existing DashboardScreen function
+
 function DashboardScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -414,22 +417,59 @@ function DashboardScreen({ token, user }) {
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
 
+  // Claim flow state
+  const [claimView, setClaimView] = useState("dashboard"); // dashboard | search | confirm | success
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [claimTarget, setClaimTarget] = useState(null);
+  const [claiming, setClaiming] = useState(false);
+
   useEffect(() => {
-    apiFetch("/api/venues", {}, token).then(data => {
-      if (Array.isArray(data)) {
-        const mine = data.filter(v => v.owner_id === user?.id);
-        setVenues(mine);
-        if (mine.length > 0) loadDash(mine[0].id);
-        else setLoading(false);
-      }
-    });
+    loadMyVenues();
   }, []);
+
+  async function loadMyVenues() {
+    setLoading(true);
+    const data = await apiFetch("/api/venues?city=all", {}, token);
+    if (Array.isArray(data)) {
+      const mine = data.filter(v => v.owner_id === user?.id);
+      setVenues(mine);
+      if (mine.length > 0) loadDash(mine[0].id);
+      else { setLoading(false); setClaimView("search"); }
+    } else {
+      setLoading(false);
+      setClaimView("search");
+    }
+  }
 
   async function loadDash(venueId) {
     setLoading(true); setSelected(venueId);
     const data = await apiFetch(`/api/dashboard/${venueId}`, {}, token);
     if (!data.error) setDash(data);
     setLoading(false);
+    setClaimView("dashboard");
+  }
+
+  async function searchVenues() {
+    if (searchQuery.trim().length < 2) return;
+    setSearching(true);
+    const data = await apiFetch(`/api/venues/search?q=${encodeURIComponent(searchQuery)}`, {}, token);
+    if (Array.isArray(data)) setSearchResults(data);
+    setSearching(false);
+  }
+
+  async function claimVenue() {
+    if (!claimTarget) return;
+    setClaiming(true);
+    const data = await apiFetch(`/api/venues/${claimTarget.id}/claim`, { method: "POST" }, token);
+    if (data.success) {
+      setClaimView("success");
+      setTimeout(() => loadMyVenues(), 1500);
+    } else {
+      alert(data.error || "Claim failed. Please try again.");
+    }
+    setClaiming(false);
   }
 
   async function postDeal() {
@@ -446,36 +486,162 @@ function DashboardScreen({ token, user }) {
     loadDash(selected);
   }
 
-  if (venues.length === 0 && !loading) return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
-      <div style={{ fontSize: 40 }}>🏪</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>No venues yet</div>
-      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", textAlign: "center" }}>Register your bar to access the business dashboard</div>
+  // ── Search View ──────────────────────────────────
+  if (claimView === "search" || claimView === "confirm") {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>
+            {claimView === "confirm" ? "Confirm Claim" : "Claim Your Venue"}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>
+            {claimView === "confirm" ? claimTarget?.name : "Find your bar or restaurant"}
+          </div>
+        </div>
+
+        {/* Confirm view */}
+        {claimView === "confirm" && claimTarget && (
+          <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{claimTarget.name}</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 4 }}>{claimTarget.address}</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{claimTarget.neighborhood} · {claimTarget.city} · {claimTarget.category}</div>
+            </div>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", lineHeight: 1.6, margin: 0 }}>
+              By claiming this venue you confirm you are the owner or authorized representative. Your account will be linked as the verified owner.
+            </p>
+            <button onClick={claimVenue} disabled={claiming} style={{ padding: "14px", borderRadius: 14, border: "none", background: "linear-gradient(135deg, #ff3366, #8b5cf6)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", opacity: claiming ? 0.7 : 1 }}>
+              {claiming ? "Claiming..." : "✓ Confirm — This Is My Venue"}
+            </button>
+            <button onClick={() => { setClaimView("search"); setClaimTarget(null); }} style={{ padding: "12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.5)", fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+              ← Back to Search
+            </button>
+          </div>
+        )}
+
+        {/* Search view */}
+        {claimView === "search" && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && searchVenues()}
+                placeholder="Search by venue name..."
+                style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 14px", color: "#fff", fontSize: 14, fontFamily: "inherit", outline: "none" }}
+              />
+              <button onClick={searchVenues} disabled={searching} style={{ padding: "10px 16px", borderRadius: 12, border: "none", background: "#ff3366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: searching ? 0.7 : 1 }}>
+                {searching ? "..." : "Search"}
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+              {searchResults.length === 0 && searchQuery.length > 1 && !searching && (
+                <div style={{ textAlign: "center", padding: 40 }}>
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
+                  <div style={{ fontSize: 14, color: "rgba(255,255,255,0.4)" }}>No venues found for "{searchQuery}"</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 8 }}>Try a shorter name or check spelling</div>
+                </div>
+              )}
+
+              {searchResults.length === 0 && searchQuery.length === 0 && (
+                <div style={{ textAlign: "center", padding: 40 }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>🏪</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", marginBottom: 8 }}>Claim your venue</div>
+                  <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>Search for your bar or restaurant to claim it and access your business dashboard</div>
+                </div>
+              )}
+
+              {searchResults.map(v => (
+                <div key={v.id} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: `1px solid ${v.owner_id ? "rgba(255,255,255,0.04)" : "rgba(255,51,102,0.2)"}`, opacity: v.owner_id ? 0.5 : 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", marginBottom: 2 }}>{v.name}</div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 2 }}>{v.address}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{v.neighborhood} · {v.city} · {v.category}</div>
+                    </div>
+                    {v.owner_id ? (
+                      <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 10px", fontSize: 11, color: "rgba(255,255,255,0.4)", flexShrink: 0, marginLeft: 8 }}>Claimed</div>
+                    ) : (
+                      <button onClick={() => { setClaimTarget(v); setClaimView("confirm"); }} style={{ background: "#ff3366", border: "none", borderRadius: 10, padding: "8px 14px", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", flexShrink: 0, marginLeft: 8 }}>
+                        Claim
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Success View ─────────────────────────────────
+  if (claimView === "success") {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 16 }}>
+        <div style={{ fontSize: 56 }}>🎉</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", textAlign: "center" }}>Venue Claimed!</div>
+        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", textAlign: "center", lineHeight: 1.6 }}>
+          You are now the verified owner of {claimTarget?.name}. Loading your dashboard...
+        </div>
+        <div style={{ width: 40, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+          <div style={{ height: "100%", background: "#ff3366", animation: "loading 1.5s ease-in-out infinite", borderRadius: 2 }} />
+        </div>
+        <style>{`@keyframes loading { 0%{width:0%} 100%{width:100%} }`}</style>
+      </div>
+    );
+  }
+
+  // ── Dashboard View ───────────────────────────────
+  if (loading) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>Loading dashboard...</div>
     </div>
   );
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px" }}>
-      {loading && <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: 13, padding: 40 }}>Loading dashboard...</div>}
-      {!loading && dash && (
+      {dash && (
         <>
+          {/* Header */}
           <div style={{ background: "linear-gradient(135deg, rgba(255,51,102,0.15), rgba(139,92,246,0.1))", borderRadius: 18, padding: 16, marginBottom: 12, border: "1px solid rgba(255,51,102,0.2)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>Business Dashboard</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{dash.venue?.name}</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>✓ Verified Owner</div>
               </div>
               <div style={{ background: "rgba(255,51,102,0.2)", border: "1px solid rgba(255,51,102,0.4)", borderRadius: 12, padding: "6px 12px", fontSize: 13, color: "#ff3366", fontWeight: 700 }}>Live 🔴</div>
             </div>
+            {venues.length > 1 && (
+              <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {venues.map(v => (
+                  <button key={v.id} onClick={() => loadDash(v.id)} style={{ padding: "4px 10px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 600, background: selected === v.id ? "#ff3366" : "rgba(255,255,255,0.08)", color: "#fff" }}>
+                    {v.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-            {[{ label: "Visitors Today", value: dash.today?.visitor_count || 0, color: "#ff3366" }, { label: "Redemptions", value: dash.today?.deal_redemptions || 0, color: "#f59e0b" }, { label: "Live Score", value: `${dash.crowd?.busy_score || 0}%`, color: "#10b981" }].map(stat => (
+            {[
+              { label: "Visitors Today", value: dash.today?.visitor_count || 0, color: "#ff3366" },
+              { label: "Redemptions", value: dash.today?.deal_redemptions || 0, color: "#f59e0b" },
+              { label: "Live Score", value: `${dash.crowd?.busy_score || 0}%`, color: "#10b981" }
+            ].map(stat => (
               <div key={stat.label} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "12px 10px", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: stat.color }}>{stat.value}</div>
                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 2, lineHeight: 1.3 }}>{stat.label}</div>
               </div>
             ))}
           </div>
+
+          {/* Post a deal */}
           <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: "1px solid rgba(245,158,11,0.2)" }}>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Post a Deal</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -485,6 +651,8 @@ function DashboardScreen({ token, user }) {
               <button onClick={postDeal} disabled={posting} style={{ padding: "10px", borderRadius: 10, border: "none", background: "#f59e0b", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{posting ? "Posting..." : "Post Deal 🎟"}</button>
             </div>
           </div>
+
+          {/* Active deals */}
           {dash.active_deals?.length > 0 && (
             <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Active Deals</div>
@@ -496,7 +664,9 @@ function DashboardScreen({ token, user }) {
               ))}
             </div>
           )}
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 14, border: `1px solid ${dash.venue?.heatmap_boost ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}` }}>
+
+          {/* Heatmap boost */}
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid ${dash.venue?.heatmap_boost ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Heatmap Boost</div>
@@ -507,14 +677,16 @@ function DashboardScreen({ token, user }) {
               </div>
             </div>
           </div>
+
+          {/* Claim another venue */}
+          <button onClick={() => { setClaimView("search"); setSearchQuery(""); setSearchResults([]); }} style={{ width: "100%", padding: "12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.4)", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            + Claim another venue
+          </button>
         </>
       )}
     </div>
   );
 }
-
-// ── Main App ─────────────────────────────────────
-export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
