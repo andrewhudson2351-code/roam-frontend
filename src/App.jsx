@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import PricingPage from "./PricingPage";
 import BillingSuccess from "./BillingSuccess";
 import BillingCancel from "./BillingCancel";
+import BillingDashboard from "./BillingDashboard";
 
 const API = "https://roam-backend-production.up.railway.app";
 const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
@@ -79,7 +80,6 @@ function loadGoogleMaps() {
   });
 }
 
-// ── Auth Screen ──────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", username: "" });
@@ -130,7 +130,6 @@ function AuthScreen({ onAuth }) {
   );
 }
 
-// ── Heatmap Screen ───────────────────────────────
 function HeatmapScreen({ token }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
@@ -155,7 +154,6 @@ function HeatmapScreen({ token }) {
         zoomControl: true,
         gestureHandling: "greedy",
       });
-
       idleListenerRef.current = mapInstanceRef.current.addListener("idle", () => {
         const center = mapInstanceRef.current.getCenter();
         const city = getCityFromCoords(center.lat(), center.lng());
@@ -163,7 +161,6 @@ function HeatmapScreen({ token }) {
         loadVenues(city);
       });
     });
-
     const t = setInterval(() => setPulse(p => !p), 1500);
     return () => {
       clearInterval(t);
@@ -180,51 +177,27 @@ function HeatmapScreen({ token }) {
 
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google?.maps) return;
-
     markersRef.current.forEach(m => m.setMap(null));
     circlesRef.current.forEach(c => c.setMap(null));
     markersRef.current = [];
     circlesRef.current = [];
-
     const filtered = filter === "All" ? venues : venues.filter(v => v.category === filter);
-
     filtered.forEach(venue => {
       const busy = venue.busy_score || 0;
       const color = getBusyColor(busy);
       const pos = { lat: parseFloat(venue.latitude), lng: parseFloat(venue.longitude) };
       if (isNaN(pos.lat) || isNaN(pos.lng)) return;
-
       const circle = new window.google.maps.Circle({
-        map: mapInstanceRef.current,
-        center: pos,
+        map: mapInstanceRef.current, center: pos,
         radius: busy > 80 ? 160 : busy > 60 ? 120 : 80,
-        fillColor: color,
-        fillOpacity: 0.18,
-        strokeColor: color,
-        strokeOpacity: 0.35,
-        strokeWeight: 1,
+        fillColor: color, fillOpacity: 0.18, strokeColor: color, strokeOpacity: 0.35, strokeWeight: 1,
       });
       circlesRef.current.push(circle);
-
       const marker = new window.google.maps.Marker({
-        position: pos,
-        map: mapInstanceRef.current,
-        title: venue.name,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: busy > 80 ? 10 : busy > 60 ? 8 : 6,
-          fillColor: color,
-          fillOpacity: 1,
-          strokeColor: "#fff",
-          strokeWeight: 1.5,
-        },
+        position: pos, map: mapInstanceRef.current, title: venue.name,
+        icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: busy > 80 ? 10 : busy > 60 ? 8 : 6, fillColor: color, fillOpacity: 1, strokeColor: "#fff", strokeWeight: 1.5 },
       });
-
-      marker.addListener("click", () => {
-        setActiveVenue(venue);
-        mapInstanceRef.current.panTo(pos);
-      });
-
+      marker.addListener("click", () => { setActiveVenue(venue); mapInstanceRef.current.panTo(pos); });
       markersRef.current.push(marker);
     });
   }, [venues, filter]);
@@ -237,10 +210,7 @@ function HeatmapScreen({ token }) {
 
   function goToCity(city) {
     const c = CITIES.find(c => c.name === city);
-    if (c && mapInstanceRef.current) {
-      mapInstanceRef.current.panTo({ lat: c.lat, lng: c.lng });
-      mapInstanceRef.current.setZoom(14);
-    }
+    if (c && mapInstanceRef.current) { mapInstanceRef.current.panTo({ lat: c.lat, lng: c.lng }); mapInstanceRef.current.setZoom(14); }
   }
 
   const filters = ["All", "Bar", "Club", "Restaurant"];
@@ -250,15 +220,9 @@ function HeatmapScreen({ token }) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
       <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%" }}>
         {filters.map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{
-            padding: "6px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 600,
-            background: filter === f ? "#ff3366" : "rgba(10,10,16,0.85)",
-            color: filter === f ? "#fff" : "rgba(255,255,255,0.7)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", transition: "all 0.2s"
-          }}>{f}</button>
+          <button key={f} onClick={() => setFilter(f)} style={{ padding: "6px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 600, background: filter === f ? "#ff3366" : "rgba(10,10,16,0.85)", color: filter === f ? "#fff" : "rgba(255,255,255,0.7)", boxShadow: "0 2px 8px rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", transition: "all 0.2s" }}>{f}</button>
         ))}
       </div>
-
       <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "5px 10px", border: "1px solid rgba(255,51,102,0.3)", backdropFilter: "blur(8px)" }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff3366", boxShadow: "0 0 8px #ff3366", opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
@@ -268,38 +232,27 @@ function HeatmapScreen({ token }) {
           <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>{currentCity}</span>
         </div>
       </div>
-
       <div style={{ position: "absolute", bottom: activeVenue ? 220 : 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
         {CITIES.map(c => (
-          <button key={c.name} onClick={() => goToCity(c.name)} style={{
-            flexShrink: 0, padding: "5px 10px", borderRadius: 12, border: "none", cursor: "pointer",
-            background: currentCity === c.name ? "rgba(255,51,102,0.8)" : "rgba(10,10,16,0.85)",
-            color: "#fff", fontSize: 10, fontWeight: 600, fontFamily: "inherit",
-            backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(0,0,0,0.4)"
-          }}>{c.name.split(",")[0]}</button>
+          <button key={c.name} onClick={() => goToCity(c.name)} style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 12, border: "none", cursor: "pointer", background: currentCity === c.name ? "rgba(255,51,102,0.8)" : "rgba(10,10,16,0.85)", color: "#fff", fontSize: 10, fontWeight: 600, fontFamily: "inherit", backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>{c.name.split(",")[0]}</button>
         ))}
       </div>
-
       <div ref={mapRef} style={{ flex: 1 }} />
-
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)" }}>
           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Loading venues...</span>
         </div>
       )}
-
       {!activeVenue && filtered.length > 0 && (
         <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {filtered.slice(0, 8).map(v => (
-            <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }}
-              style={{ flexShrink: 0, background: "rgba(10,10,16,0.9)", borderRadius: 12, padding: "8px 12px", border: `1px solid ${getBusyColor(v.busy_score || 0)}44`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
+            <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }} style={{ flexShrink: 0, background: "rgba(10,10,16,0.9)", borderRadius: 12, padding: "8px 12px", border: `1px solid ${getBusyColor(v.busy_score || 0)}44`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{v.name}</div>
               <div style={{ fontSize: 10, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
             </div>
           ))}
         </div>
       )}
-
       {activeVenue && (
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, background: "#1a1a2e", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: "20px 20px 32px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <button onClick={() => setActiveVenue(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.5)", fontSize: 20 }}>✕</button>
@@ -324,7 +277,6 @@ function HeatmapScreen({ token }) {
   );
 }
 
-// ── Stories Screen ───────────────────────────────
 function StoriesScreen({ token }) {
   const [stories, setStories] = useState([]);
   const [active, setActive] = useState(null);
@@ -398,7 +350,6 @@ function StoriesScreen({ token }) {
   );
 }
 
-// ── Deals Screen ─────────────────────────────────
 function DealsScreen({ token }) {
   const [deals, setDeals] = useState([]);
   const [redeemed, setRedeemed] = useState({});
@@ -455,7 +406,6 @@ function DealsScreen({ token }) {
   );
 }
 
-// ── Dashboard Screen ─────────────────────────────
 function DashboardScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -567,14 +517,17 @@ function DashboardScreen({ token, user }) {
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem("roam_token"));
+  const [token, setToken] = useState(null);
 
-  // ── URL-based routing for billing pages ──
   const path = window.location.pathname;
   const getToken = async () => localStorage.getItem("roam_token");
 
+  // Read from localStorage directly for billing routes
+  const savedUser = (() => { try { return JSON.parse(localStorage.getItem("roam_user") || "null"); } catch { return null; } })();
+  const savedToken = localStorage.getItem("roam_token");
+
   if (path === "/pricing") {
-    return <PricingPage user={user} getToken={getToken} venue={null} />;
+    return <PricingPage user={savedUser} getToken={getToken} venue={null} />;
   }
   if (path === "/billing/success") {
     return <BillingSuccess getToken={getToken} />;
@@ -582,8 +535,11 @@ export default function RoamApp() {
   if (path === "/billing/cancel") {
     return <BillingCancel />;
   }
+  if (path === "/billing") {
+    if (!savedUser || !savedToken) { window.location.href = "/"; return null; }
+    return <BillingDashboard user={savedUser} getToken={getToken} venue={null} />;
+  }
 
-  // ── Normal app ────────────────────────────
   function handleAuth(u, t) {
     setUser(u);
     setToken(t);
@@ -597,6 +553,9 @@ export default function RoamApp() {
     localStorage.removeItem("roam_token");
     localStorage.removeItem("roam_user");
   }
+
+  const currentUser = user || savedUser;
+  const currentToken = token || savedToken;
 
   const tabs = [
     { id: "map",       icon: "🗺️", label: "Map" },
@@ -614,28 +573,28 @@ export default function RoamApp() {
           <div style={{ width: 120, height: 28, background: "#000", borderRadius: 20, position: "absolute", left: "50%", transform: "translateX(-50%)", top: 8 }} />
           <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>●●● ▲ ⬛</span>
         </div>
-        {user && (
+        {currentUser && (
           <div style={{ padding: "6px 20px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #ff3366, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🌍</div>
               <span style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: -0.5 }}>roam</span>
             </div>
             <button onClick={handleLogout} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "5px 12px", color: "rgba(255,255,255,0.5)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-              {user.username} · logout
+              {currentUser.username} · logout
             </button>
           </div>
         )}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {!user ? <AuthScreen onAuth={handleAuth} /> : (
+          {!currentUser ? <AuthScreen onAuth={handleAuth} /> : (
             <>
-              {tab === "map"       && <HeatmapScreen token={token} />}
-              {tab === "stories"   && <StoriesScreen token={token} user={user} />}
-              {tab === "deals"     && <DealsScreen token={token} user={user} />}
-              {tab === "dashboard" && <DashboardScreen token={token} user={user} />}
+              {tab === "map"       && <HeatmapScreen token={currentToken} />}
+              {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
+              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
+              {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
             </>
           )}
         </div>
-        {user && (
+        {currentUser && (
           <div style={{ padding: "10px 8px 24px", display: "flex", background: "rgba(10,10,16,0.95)", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
             {tabs.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>
