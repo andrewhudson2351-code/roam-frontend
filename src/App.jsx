@@ -429,20 +429,17 @@ function DashboardScreen({ token, user }) {
     loadMyVenues();
   }, []);
 
-  async function loadMyVenues() {
-    setLoading(true);
-    const data = await apiFetch("/api/venues?city=all", {}, token);
-    if (Array.isArray(data)) {
-      const mine = data.filter(v => v.owner_id === user?.id);
-      setVenues(mine);
-      if (mine.length > 0) loadDash(mine[0].id);
-      else { setLoading(false); setClaimView("search"); }
-    } else {
-      setLoading(false);
-      setClaimView("search");
-    }
+async function loadMyVenues() {
+  setLoading(true);
+  const data = await apiFetch("/api/venues/mine", {}, token);
+  if (Array.isArray(data) && data.length > 0) {
+    setVenues(data);
+    loadDash(data[0].id);
+  } else {
+    setLoading(false);
+    setClaimView("search");
   }
-
+}
   async function loadDash(venueId) {
     setLoading(true); setSelected(venueId);
     const data = await apiFetch(`/api/dashboard/${venueId}`, {}, token);
