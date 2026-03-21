@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
+import PricingPage from "./PricingPage";
+import BillingSuccess from "./BillingSuccess";
+import BillingCancel from "./BillingCancel";
 
 const API = "https://roam-backend-production.up.railway.app";
 const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
@@ -141,7 +144,6 @@ function HeatmapScreen({ token }) {
   const circlesRef = useRef([]);
   const idleListenerRef = useRef(null);
 
-  // Load Google Maps
   useEffect(() => {
     loadGoogleMaps().then(() => {
       if (!mapRef.current) return;
@@ -154,7 +156,6 @@ function HeatmapScreen({ token }) {
         gestureHandling: "greedy",
       });
 
-      // Load venues on map idle (after pan/zoom stops)
       idleListenerRef.current = mapInstanceRef.current.addListener("idle", () => {
         const center = mapInstanceRef.current.getCenter();
         const city = getCityFromCoords(center.lat(), center.lng());
@@ -177,7 +178,6 @@ function HeatmapScreen({ token }) {
     setLoading(false);
   }
 
-  // Draw markers when venues or filter changes
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google?.maps) return;
 
@@ -248,7 +248,6 @@ function HeatmapScreen({ token }) {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
-      {/* Filter bar */}
       <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%" }}>
         {filters.map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
@@ -260,7 +259,6 @@ function HeatmapScreen({ token }) {
         ))}
       </div>
 
-      {/* Live badge + city name */}
       <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "5px 10px", border: "1px solid rgba(255,51,102,0.3)", backdropFilter: "blur(8px)" }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff3366", boxShadow: "0 0 8px #ff3366", opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
@@ -271,7 +269,6 @@ function HeatmapScreen({ token }) {
         </div>
       </div>
 
-      {/* City jump buttons */}
       <div style={{ position: "absolute", bottom: activeVenue ? 220 : 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
         {CITIES.map(c => (
           <button key={c.name} onClick={() => goToCity(c.name)} style={{
@@ -283,17 +280,14 @@ function HeatmapScreen({ token }) {
         ))}
       </div>
 
-      {/* Google Map */}
       <div ref={mapRef} style={{ flex: 1 }} />
 
-      {/* Loading overlay */}
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(10,10,16,0.85)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)" }}>
           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Loading venues...</span>
         </div>
       )}
 
-      {/* Venue strip */}
       {!activeVenue && filtered.length > 0 && (
         <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {filtered.slice(0, 8).map(v => (
@@ -306,7 +300,6 @@ function HeatmapScreen({ token }) {
         </div>
       )}
 
-      {/* Selected venue card */}
       {activeVenue && (
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, background: "#1a1a2e", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: "20px 20px 32px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <button onClick={() => setActiveVenue(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.5)", fontSize: 20 }}>✕</button>
@@ -574,18 +567,47 @@ function DashboardScreen({ token, user }) {
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem("roam_token"));
+
+  // ── URL-based routing for billing pages ──
+  const path = window.location.pathname;
+  const getToken = async () => localStorage.getItem("roam_token");
+
+  if (path === "/pricing") {
+    return <PricingPage user={user} getToken={getToken} venue={null} />;
+  }
+  if (path === "/billing/success") {
+    return <BillingSuccess getToken={getToken} />;
+  }
+  if (path === "/billing/cancel") {
+    return <BillingCancel />;
+  }
+
+  // ── Normal app ────────────────────────────
+  function handleAuth(u, t) {
+    setUser(u);
+    setToken(t);
+    localStorage.setItem("roam_token", t);
+    localStorage.setItem("roam_user", JSON.stringify(u));
+  }
+
+  function handleLogout() {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("roam_token");
+    localStorage.removeItem("roam_user");
+  }
 
   const tabs = [
-    { id: "map", icon: "🗺️", label: "Map" },
-    { id: "stories", icon: "📸", label: "Stories" },
-    { id: "deals", icon: "🎟", label: "Deals" },
+    { id: "map",       icon: "🗺️", label: "Map" },
+    { id: "stories",   icon: "📸", label: "Stories" },
+    { id: "deals",     icon: "🎟",  label: "Deals" },
     { id: "dashboard", icon: "📊", label: "Business" },
   ];
 
   return (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", background: "#060608", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap'); *{box-sizing:border-box;margin:0;padding:0} ::-webkit-scrollbar{display:none} body{background:#060608}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap'); *{box-sizing:border-box;margin:0;padding:0} ::-webkit-scrollbar{display:none} body{background:#060608} @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
       <div style={{ width: 375, height: 780, background: "#0a0a10", borderRadius: 48, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 40px 120px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.08)", position: "relative" }}>
         <div style={{ padding: "14px 24px 6px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>9:41</span>
@@ -598,17 +620,17 @@ export default function RoamApp() {
               <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #ff3366, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🌍</div>
               <span style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: -0.5 }}>roam</span>
             </div>
-            <button onClick={() => { setUser(null); setToken(null); }} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "5px 12px", color: "rgba(255,255,255,0.5)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+            <button onClick={handleLogout} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "5px 12px", color: "rgba(255,255,255,0.5)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
               {user.username} · logout
             </button>
           </div>
         )}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {!user ? <AuthScreen onAuth={(u, t) => { setUser(u); setToken(t); }} /> : (
+          {!user ? <AuthScreen onAuth={handleAuth} /> : (
             <>
-              {tab === "map" && <HeatmapScreen token={token} />}
-              {tab === "stories" && <StoriesScreen token={token} user={user} />}
-              {tab === "deals" && <DealsScreen token={token} user={user} />}
+              {tab === "map"       && <HeatmapScreen token={token} />}
+              {tab === "stories"   && <StoriesScreen token={token} user={user} />}
+              {tab === "deals"     && <DealsScreen token={token} user={user} />}
               {tab === "dashboard" && <DashboardScreen token={token} user={user} />}
             </>
           )}
@@ -627,8 +649,4 @@ export default function RoamApp() {
       </div>
     </div>
   );
-}
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
 }
