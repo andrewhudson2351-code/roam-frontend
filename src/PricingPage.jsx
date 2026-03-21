@@ -99,7 +99,7 @@ export default function PricingPage({ user, getToken, venue }) {
       {error && (
         <div style={styles.errorBanner}>
           {error}
-          <button style={styles.errorClose} onClick={() => setError(null)}>×</button>
+          <button style={styles.errorClose} onClick={() => setError(null)}>x</button>
         </div>
       )}
 
@@ -155,7 +155,7 @@ export default function PricingPage({ user, getToken, venue }) {
                 onClick={() => handleUpgrade(tier.id)}
                 disabled={isDisabled}
               >
-                {isLoading ? 'Redirecting…' : isCurrent ? 'Current plan' : `Upgrade to ${tier.name}`}
+                {isLoading ? 'Redirecting...' : isCurrent ? 'Current plan' : `Upgrade to ${tier.name}`}
               </button>
             </div>
           );
@@ -170,16 +170,190 @@ export default function PricingPage({ user, getToken, venue }) {
 }
 
 const styles = {
-  page: { minHeight: '100vh', background: '#0A0A0A', color: '#F0EDE8', fontFamily: '"DM Sans", sans-serif', padding: '0 24px 80px', position: 'relative', overflow: 'hidden' },
-  grid: { position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(232,160,32,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(232,160,32,0.04) 1px, transparent 1px)', backgroundSize: '48px 48px', pointerEvents: 'none' },
-  header: { position: 'relative', zIndex: 1, textAlign: 'center', paddingTop: 72, paddingBottom: 56 },
-  eyebrow: { fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8A020', marginBottom: 20 },
-  headline: { fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.02em', margin: '0 0 16px' },
-  subheadline: { fontSize: 18, color: '#888', margin: 0 },
-  errorBanner: { position: 'relative', zIndex: 1, maxWidth: 480, margin: '0 auto 32px', background: '#2A0D0D', border: '1px solid #5C1A1A', borderRadius: 8, padding: '12px 40px 12px 16px', color: '#FF6B6B', fontSize: 14 },
-  errorClose: { position: 'absolute', top: 10, right: 12, background: 'none', border: 'none', color: '#FF6B6B', fontSize: 18, cursor: 'pointer' },
-  cardGrid: { position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, maxWidth: 960, margin: '0 auto' },
-  card: { background: '#111', border: '1px solid #222', borderRadius: 16, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative' },
-  cardPopular: { border: '1px solid #E8A020', background: '#131008' },
-  cardCurrent: { border: '1px solid #2A2A2A', opacity: 0.7 },
-  badge: { p
+  page: {
+    minHeight: '100vh',
+    background: '#0A0A0A',
+    color: '#F0EDE8',
+    fontFamily: '"DM Sans", sans-serif',
+    padding: '0 24px 80px',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  grid: {
+    position: 'absolute',
+    inset: 0,
+    backgroundImage: 'linear-gradient(rgba(232,160,32,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(232,160,32,0.04) 1px, transparent 1px)',
+    backgroundSize: '48px 48px',
+    pointerEvents: 'none',
+  },
+  header: {
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'center',
+    paddingTop: 72,
+    paddingBottom: 56,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#E8A020',
+    marginBottom: 20,
+  },
+  headline: {
+    fontSize: 'clamp(36px, 5vw, 56px)',
+    fontWeight: 700,
+    lineHeight: 1.1,
+    letterSpacing: '-0.02em',
+    margin: '0 0 16px',
+  },
+  subheadline: {
+    fontSize: 18,
+    color: '#888',
+    margin: 0,
+  },
+  errorBanner: {
+    position: 'relative',
+    zIndex: 1,
+    maxWidth: 480,
+    margin: '0 auto 32px',
+    background: '#2A0D0D',
+    border: '1px solid #5C1A1A',
+    borderRadius: 8,
+    padding: '12px 40px 12px 16px',
+    color: '#FF6B6B',
+    fontSize: 14,
+  },
+  errorClose: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    background: 'none',
+    border: 'none',
+    color: '#FF6B6B',
+    fontSize: 18,
+    cursor: 'pointer',
+  },
+  cardGrid: {
+    position: 'relative',
+    zIndex: 1,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: 20,
+    maxWidth: 960,
+    margin: '0 auto',
+  },
+  card: {
+    background: '#111',
+    border: '1px solid #222',
+    borderRadius: 16,
+    padding: 32,
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+  },
+  cardPopular: {
+    border: '1px solid #E8A020',
+    background: '#131008',
+  },
+  cardCurrent: {
+    border: '1px solid #2A2A2A',
+    opacity: 0.7,
+  },
+  badge: {
+    position: 'absolute',
+    top: -12,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#E8A020',
+    color: '#0A0A0A',
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    padding: '4px 12px',
+    borderRadius: 99,
+    whiteSpace: 'nowrap',
+  },
+  cardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 24,
+    marginTop: 8,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  tierName: {
+    fontSize: 20,
+    fontWeight: 700,
+    margin: '0 0 2px',
+    letterSpacing: '-0.01em',
+  },
+  tierTagline: {
+    fontSize: 13,
+    fontWeight: 500,
+    margin: 0,
+  },
+  priceRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 2,
+    marginBottom: 24,
+  },
+  priceDollar: {
+    fontSize: 22,
+    color: '#888',
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  priceAmount: {
+    fontSize: 56,
+    fontWeight: 700,
+    lineHeight: 1,
+    letterSpacing: '-0.03em',
+  },
+  pricePer: {
+    fontSize: 16,
+    color: '#555',
+    marginLeft: 4,
+  },
+  featureList: {
+    listStyle: 'none',
+    padding: 0,
+    margin: '0 0 32px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    flex: 1,
+  },
+  featureItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    fontSize: 14,
+    color: '#BBB',
+    lineHeight: 1.4,
+  },
+  ctaButton: {
+    width: '100%',
+    padding: '14px 24px',
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 600,
+    letterSpacing: '-0.01em',
+  },
+  footerNote: {
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'center',
+    fontSize: 13,
+    color: '#444',
+    marginTop: 48,
+  },
+};
