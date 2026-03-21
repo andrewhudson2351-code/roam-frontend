@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import PricingPage from "./PricingPage";
 import BillingSuccess from "./BillingSuccess";
 import BillingCancel from "./BillingCancel";
+import BillingDashboard from "./BillingDashboard";
 
 const API = "https://roam-backend-production.up.railway.app";
 const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
@@ -578,9 +579,9 @@ export default function RoamApp() {
   }
   if (path === "/billing/success") {
     return <BillingSuccess getToken={getToken} />;
-  }
-  if (path === "/billing/cancel") {
-    return <BillingCancel />;
+  }if (path === "/billing") {
+  return <BillingDashboard user={user} getToken={getToken} venue={null} />;
+}
   }
 
   // ── Normal app ────────────────────────────
