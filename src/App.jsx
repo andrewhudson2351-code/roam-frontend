@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import PricingPage from "./PricingPage";
 import BillingSuccess from "./BillingSuccess";
 import BillingCancel from "./BillingCancel";
-import BillingDashboard from "./BillingDashboard";
 
 const API = "https://roam-backend-production.up.railway.app";
 const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
@@ -567,13 +566,8 @@ function DashboardScreen({ token, user }) {
 // ── Main App ─────────────────────────────────────
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
-const [user, setUser] = useState(() => {
-  try {
-    const u = localStorage.getItem("roam_user");
-    return u ? JSON.parse(u) : null;
-  } catch { return null; }
-});
-const [token, setToken] = useState(() => localStorage.getItem("roam_token"));
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem("roam_token"));
 
   // ── URL-based routing for billing pages ──
   const path = window.location.pathname;
@@ -584,9 +578,9 @@ const [token, setToken] = useState(() => localStorage.getItem("roam_token"));
   }
   if (path === "/billing/success") {
     return <BillingSuccess getToken={getToken} />;
-  }if (path === "/billing") {
-  return <BillingDashboard user={user} getToken={getToken} venue={null} />;
-}
+  }
+  if (path === "/billing/cancel") {
+    return <BillingCancel />;
   }
 
   // ── Normal app ────────────────────────────
