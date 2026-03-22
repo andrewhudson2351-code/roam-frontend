@@ -406,9 +406,6 @@ function DealsScreen({ token }) {
   );
 }
 
-// ── DashboardScreen with Venue Claim Flow ────────
-// Drop this into App.jsx replacing the existing DashboardScreen function
-
 function DashboardScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -416,30 +413,30 @@ function DashboardScreen({ token, user }) {
   const [newDeal, setNewDeal] = useState({ title: "", detail: "", expires_at: "" });
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [lastReport, setLastReport] = useState(null);
 
-  // Claim flow state
-  const [claimView, setClaimView] = useState("dashboard"); // dashboard | search | confirm | success
+  const [claimView, setClaimView] = useState("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [claimTarget, setClaimTarget] = useState(null);
   const [claiming, setClaiming] = useState(false);
 
-  useEffect(() => {
-    loadMyVenues();
-  }, []);
+  useEffect(() => { loadMyVenues(); }, []);
 
-async function loadMyVenues() {
-  setLoading(true);
-  const data = await apiFetch("/api/venues/mine", {}, token);
-  if (Array.isArray(data) && data.length > 0) {
-    setVenues(data);
-    loadDash(data[0].id);
-  } else {
-    setLoading(false);
-    setClaimView("search");
+  async function loadMyVenues() {
+    setLoading(true);
+    const data = await apiFetch("/api/venues/mine", {}, token);
+    if (Array.isArray(data) && data.length > 0) {
+      setVenues(data);
+      loadDash(data[0].id);
+    } else {
+      setLoading(false);
+      setClaimView("search");
+    }
   }
-}
+
   async function loadDash(venueId) {
     setLoading(true); setSelected(venueId);
     const data = await apiFetch(`/api/dashboard/${venueId}`, {}, token);
@@ -483,11 +480,23 @@ async function loadMyVenues() {
     loadDash(selected);
   }
 
-  // ── Search View ──────────────────────────────────
+  async function submitSelfReport(level, label) {
+    setReporting(true);
+    const data = await apiFetch(
+      `/api/venues/${selected}/crowd`,
+      { method: "POST", body: JSON.stringify({ busy_level: level }) },
+      token
+    );
+    if (data.success) {
+      setLastReport({ label, score: data.new_score, time: new Date() });
+      loadDash(selected);
+    }
+    setReporting(false);
+  }
+
   if (claimView === "search" || claimView === "confirm") {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Header */}
         <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>
             {claimView === "confirm" ? "Confirm Claim" : "Claim Your Venue"}
@@ -496,8 +505,6 @@ async function loadMyVenues() {
             {claimView === "confirm" ? claimTarget?.name : "Find your bar or restaurant"}
           </div>
         </div>
-
-        {/* Confirm view */}
         {claimView === "confirm" && claimTarget && (
           <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -516,23 +523,14 @@ async function loadMyVenues() {
             </button>
           </div>
         )}
-
-        {/* Search view */}
         {claimView === "search" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && searchVenues()}
-                placeholder="Search by venue name..."
-                style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 14px", color: "#fff", fontSize: 14, fontFamily: "inherit", outline: "none" }}
-              />
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && searchVenues()} placeholder="Search by venue name..." style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 14px", color: "#fff", fontSize: 14, fontFamily: "inherit", outline: "none" }} />
               <button onClick={searchVenues} disabled={searching} style={{ padding: "10px 16px", borderRadius: 12, border: "none", background: "#ff3366", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: searching ? 0.7 : 1 }}>
                 {searching ? "..." : "Search"}
               </button>
             </div>
-
             <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
               {searchResults.length === 0 && searchQuery.length > 1 && !searching && (
                 <div style={{ textAlign: "center", padding: 40 }}>
@@ -541,7 +539,6 @@ async function loadMyVenues() {
                   <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 8 }}>Try a shorter name or check spelling</div>
                 </div>
               )}
-
               {searchResults.length === 0 && searchQuery.length === 0 && (
                 <div style={{ textAlign: "center", padding: 40 }}>
                   <div style={{ fontSize: 40, marginBottom: 12 }}>🏪</div>
@@ -549,7 +546,6 @@ async function loadMyVenues() {
                   <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>Search for your bar or restaurant to claim it and access your business dashboard</div>
                 </div>
               )}
-
               {searchResults.map(v => (
                 <div key={v.id} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "14px 16px", border: `1px solid ${v.owner_id ? "rgba(255,255,255,0.04)" : "rgba(255,51,102,0.2)"}`, opacity: v.owner_id ? 0.5 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -575,7 +571,6 @@ async function loadMyVenues() {
     );
   }
 
-  // ── Success View ─────────────────────────────────
   if (claimView === "success") {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 16 }}>
@@ -592,7 +587,6 @@ async function loadMyVenues() {
     );
   }
 
-  // ── Dashboard View ───────────────────────────────
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>Loading dashboard...</div>
@@ -636,6 +630,40 @@ async function loadMyVenues() {
                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 2, lineHeight: 1.3 }}>{stat.label}</div>
               </div>
             ))}
+          </div>
+
+          {/* ── Self-reporting widget ── */}
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>How busy are you right now?</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 12 }}>Update your live status on the heatmap</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[
+                { label: "Quiet", emoji: "😴", level: 15, color: "#22c55e" },
+                { label: "Getting Busy", emoji: "🙂", level: 55, color: "#f59e0b" },
+                { label: "Packed", emoji: "🔥", level: 90, color: "#ff3366" },
+              ].map(opt => (
+                <button
+                  key={opt.label}
+                  onClick={() => submitSelfReport(opt.level, opt.label)}
+                  disabled={reporting}
+                  style={{
+                    flex: 1, padding: "10px 6px", borderRadius: 12,
+                    border: `1px solid ${opt.color}44`,
+                    background: lastReport?.label === opt.label ? opt.color + "33" : "rgba(255,255,255,0.04)",
+                    cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s",
+                    opacity: reporting ? 0.6 : 1,
+                  }}
+                >
+                  <div style={{ fontSize: 22, marginBottom: 4 }}>{opt.emoji}</div>
+                  <div style={{ fontSize: 10, color: lastReport?.label === opt.label ? opt.color : "rgba(255,255,255,0.5)", fontWeight: 700 }}>{opt.label}</div>
+                </button>
+              ))}
+            </div>
+            {lastReport && (
+              <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center" }}>
+                Last updated: <span style={{ color: "#10b981" }}>{lastReport.label}</span> · {Math.floor((Date.now() - lastReport.time) / 60000) || "<1"} min ago
+              </div>
+            )}
           </div>
 
           {/* Post a deal */}
@@ -684,15 +712,15 @@ async function loadMyVenues() {
     </div>
   );
 }
-export default function RoamApp() {  
-const [tab, setTab] = useState("map");
+
+export default function RoamApp() {
+  const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
 
   const path = window.location.pathname;
   const getToken = async () => localStorage.getItem("roam_token");
 
-  // Read from localStorage directly for billing routes
   const savedUser = (() => { try { return JSON.parse(localStorage.getItem("roam_user") || "null"); } catch { return null; } })();
   const savedToken = localStorage.getItem("roam_token");
 
