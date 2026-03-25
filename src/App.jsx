@@ -82,17 +82,7 @@ function timeAgo(dateStr) {
 
 const EMOJIS = ["🔥","🍺","🎵","🍸","🎸","💃","🎉","🌙"];
 
-const DARK_MAP_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#0d1117" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "rgba(250,250,248,0.3)" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0d1117" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#1f1f35" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#252545" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a0a18" }] },
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-];
+const DARK_MAP_STYLE = [];
 
 function loadGoogleMaps() {
   return new Promise(resolve => {
@@ -285,6 +275,7 @@ function HeatmapScreen({ token }) {
   const [currentCity, setCurrentCity] = useState("Charlotte");
   const [pulse, setPulse] = useState(true);
   const [mapReady, setMapReady] = useState(false);
+  const [mapInstance, setMapInstance] = useState(null);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
@@ -296,11 +287,12 @@ function HeatmapScreen({ token }) {
       mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
         center: { lat: 35.2271, lng: -80.8431 },
         zoom: 14,
-        styles: DARK_MAP_STYLE,
+        styles: [],
         disableDefaultUI: true,
         zoomControl: true,
         gestureHandling: "greedy",
       });
+      setMapInstance(mapInstanceRef.current);
       idleListenerRef.current = mapInstanceRef.current.addListener("idle", () => {
         const center = mapInstanceRef.current.getCenter();
         const city = getCityFromCoords(center.lat(), center.lng());
@@ -380,10 +372,9 @@ function HeatmapScreen({ token }) {
       </div>
       <div style={{ flex: 1, position: "relative" }}>
         <div ref={mapRef} style={{ position: "absolute", inset: 0 }} />
-{mapReady && (
-  <HeatBlobOverlay venues={filtered} mapInstance={mapInstanceRef.current} />
-)}
-      </div>
+{mapInstance && (
+  <HeatBlobOverlay venues={filtered} mapInstance={mapInstance} />
+)}      </div>
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.2)` }}>
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>Loading venues...</span>
