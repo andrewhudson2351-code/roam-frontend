@@ -380,9 +380,9 @@ function HeatmapScreen({ token }) {
       </div>
       <div style={{ flex: 1, position: "relative" }}>
         <div ref={mapRef} style={{ position: "absolute", inset: 0 }} />
-        {mapReady && mapInstanceRef.current && (
-          <HeatBlobOverlay venues={filtered} mapInstance={mapInstanceRef.current} />
-        )}
+{mapReady && (
+  <HeatBlobOverlay venues={filtered} mapInstance={mapInstanceRef.current} />
+)}
       </div>
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.2)` }}>
