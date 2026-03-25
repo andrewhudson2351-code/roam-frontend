@@ -208,7 +208,7 @@ function HeatBlobOverlay({ venues, mapInstance }) {
   }, [mapInstance, venues]);
 
   return (
-    <svg ref={svgRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", mixBlendMode: "multiply", zIndex: 2 }}>
+    <svg ref={svgRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", mixBlendMode: "multiply", zIndex: 2, width: "100%", height: "100%" }}>
       <defs /><g className="blobs" />
     </svg>
   );
