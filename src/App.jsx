@@ -924,7 +924,7 @@ const tabs = [
   { id: "stories",   icon: "📸", label: "Stories" },
   { id: "deals",     icon: "✦",  label: "Deals" },
   { id: "dashboard", icon: "⊙",  label: "Business" },
-  { id: "settings",  icon: "⚙️", label: "Settings" },
+  { id: "settings", icon: "⚙️", label: "Settings" },
 ];
 
 
