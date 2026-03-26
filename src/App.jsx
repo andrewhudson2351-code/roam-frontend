@@ -121,11 +121,11 @@ function Compass({ size = 28 }) {
 
 // ── SVG Blob Layer ─────────────────────────────────────
 const blobCfg = {
-  packed:   { rx: 0.009, ry: 0.006, coreOp: 0.55, midOp: 0.28, rimOp: 0.08 },
-  busy:     { rx: 0.007, ry: 0.005, coreOp: 0.40, midOp: 0.20, rimOp: 0.05 },
-  buzzing:  { rx: 0.006, ry: 0.004, coreOp: 0.30, midOp: 0.14, rimOp: 0.03 },
-  moderate: { rx: 0.004, ry: 0.003, coreOp: 0.18, midOp: 0.08, rimOp: 0.01 },
-  quiet:    { rx: 0,     ry: 0,     coreOp: 0,    midOp: 0,    rimOp: 0    },
+  packed:   { rx: 0.08, ry: 0.06, coreOp: 0.45, midOp: 0.22, rimOp: 0.06 },
+  busy:     { rx: 0.06, ry: 0.045, coreOp: 0.32, midOp: 0.16, rimOp: 0.04 },
+  buzzing:  { rx: 0.05, ry: 0.035, coreOp: 0.22, midOp: 0.10, rimOp: 0.02 },
+  moderate: { rx: 0.035, ry: 0.025, coreOp: 0.12, midOp: 0.05, rimOp: 0.01 },
+  quiet:    { rx: 0,    ry: 0,     coreOp: 0,    midOp: 0,    rimOp: 0    },
 };
 
 function HeatBlobOverlay({ venues, mapInstance }) {
