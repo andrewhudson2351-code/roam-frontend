@@ -265,12 +265,30 @@ function HeatmapScreen({ token }) {
     };
   }, []);
 
-  async function loadVenues(city = "Charlotte") {
-    setLoading(true);
-    const data = await apiFetch(`/api/venues?city=${encodeURIComponent(city)}`);
-    if (Array.isArray(data)) setVenues(data);
-    setLoading(false);
+async function loadVenues(city = "Charlotte") {
+  setLoading(true);
+  const [venueData, baselineData] = await Promise.all([
+    apiFetch(`/api/venues?city=${encodeURIComponent(city)}`),
+    apiFetch(`/api/venues/baseline?city=${encodeURIComponent(city)}`),
+  ]);
+
+  if (Array.isArray(venueData)) {
+    const baselineMap = {};
+    if (baselineData?.baselines) {
+      baselineData.baselines.forEach(b => { baselineMap[b.venue_id] = b.baseline_score; });
+    }
+    const merged = venueData.map(v => {
+      const baseline = baselineMap[v.id] || 0;
+      const live = v.busy_score || 0;
+      const finalScore = live > 0
+        ? Math.round(live * 0.85 + baseline * 0.15)
+        : Math.round(baseline * 0.75);
+      return { ...v, busy_score: finalScore, has_baseline: baseline > 0 };
+    });
+    setVenues(merged);
   }
+  setLoading(false);
+}
 
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google?.maps) return;
