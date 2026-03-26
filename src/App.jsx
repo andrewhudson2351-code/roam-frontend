@@ -785,107 +785,104 @@ function DashboardScreen({ token, user }) {
 // Then add a Settings tab to the tab bar
 
 function SettingsScreen({ token, user, onLogout }) {
-const [deleteStep, setDeleteStep] = useState(0); // 0=idle, 1=warning, 2=confirm
-const [deleting, setDeleting] = useState(false);
+  const [deleteStep, setDeleteStep] = useState(0); // 0=idle, 1=warning, 2=confirm
+  const [deleting, setDeleting] = useState(false);
 
-async function executeDelete() {
-setDeleting(true);
-const data = await apiFetch(”/api/auth/me”, { method: “DELETE” }, token);
-if (data.success) {
-onLogout();
-} else {
-alert(data.error || “Failed to delete account. Please try again.”);
-setDeleting(false);
-setDeleteStep(0);
-}
-}
+  async function executeDelete() {
+    setDeleting(true);
+    const data = await apiFetch("/api/auth/me", { method: "DELETE" }, token);
+    if (data.success) {
+      onLogout();
+    } else {
+      alert(data.error || "Failed to delete account. Please try again.");
+      setDeleting(false);
+      setDeleteStep(0);
+    }
+  }
 
-return (
-<div style={{ flex: 1, overflowY: “auto”, padding: “16px”, background: C.mapBg }}>
-{/* Header */}
-<div style={{ marginBottom: 24 }}>
-<div style={{ fontSize: 9, color: C.aureus, fontFamily: “sans-serif”, letterSpacing: 2, textTransform: “uppercase”, marginBottom: 4 }}>Account</div>
-<div style={{ fontSize: 20, fontWeight: 700, color: C.marble, fontFamily: “‘Playfair Display’, serif” }}>Settings</div>
-</div>
-
-```
-  {/* User info */}
-  <div style={{ background: "rgba(200,169,110,0.06)", borderRadius: 16, padding: 16, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
-    <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Profile</div>
-    <div style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{user?.username}</div>
-    <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5 }}>{user?.email}</div>
-  </div>
-
-  {/* Divider */}
-  <div style={{ height: 1, background: "rgba(200,169,110,0.1)", marginBottom: 12 }} />
-
-  {/* Delete account — step 0: idle button */}
-  {deleteStep === 0 && (
-    <div style={{ background: "rgba(255,45,45,0.04)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.12)` }}>
-      <div style={{ fontSize: 9, color: "rgba(255,45,45,0.7)", fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Danger Zone</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>Delete Account</div>
-      <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, marginBottom: 14, lineHeight: 1.6 }}>
-        Permanently delete your account and all associated data. This cannot be undone.
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: C.mapBg }}>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Account</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Settings</div>
       </div>
-      <button
-        onClick={() => setDeleteStep(1)}
-        style={{ width: "100%", padding: "11px", borderRadius: 12, border: `1px solid rgba(255,45,45,0.3)`, background: "rgba(255,45,45,0.08)", color: "#FF2D2D", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
-        Delete My Account
-      </button>
+
+      {/* User info */}
+      <div style={{ background: "rgba(200,169,110,0.06)", borderRadius: 16, padding: 16, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+        <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Profile</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{user?.username}</div>
+        <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5 }}>{user?.email}</div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: "rgba(200,169,110,0.1)", marginBottom: 12 }} />
+
+      {/* Delete account — step 0: idle button */}
+      {deleteStep === 0 && (
+        <div style={{ background: "rgba(255,45,45,0.04)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.12)` }}>
+          <div style={{ fontSize: 9, color: "rgba(255,45,45,0.7)", fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Danger Zone</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>Delete Account</div>
+          <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, marginBottom: 14, lineHeight: 1.6 }}>
+            Permanently delete your account and all associated data. This cannot be undone.
+          </div>
+          <button
+            onClick={() => setDeleteStep(1)}
+            style={{ width: "100%", padding: "11px", borderRadius: 12, border: `1px solid rgba(255,45,45,0.3)`, background: "rgba(255,45,45,0.08)", color: "#FF2D2D", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
+            Delete My Account
+          </button>
+        </div>
+      )}
+
+      {/* Delete account — step 1: warning */}
+      {deleteStep === 1 && (
+        <div style={{ background: "rgba(255,45,45,0.08)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.3)` }}>
+          <div style={{ fontSize: 22, textAlign: "center", marginBottom: 12 }}>⚠️</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", textAlign: "center", marginBottom: 8 }}>Are you sure?</div>
+          <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.7, marginBottom: 20, lineHeight: 1.7, textAlign: "center" }}>
+            This will permanently delete your account, all your crowd reports, stories, and saved deals. This cannot be undone.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              onClick={() => setDeleteStep(2)}
+              style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
+              Yes, Delete My Account
+            </button>
+            <button
+              onClick={() => setDeleteStep(0)}
+              style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete account — step 2: final confirmation */}
+      {deleteStep === 2 && (
+        <div style={{ background: "rgba(255,45,45,0.1)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.4)` }}>
+          <div style={{ fontSize: 22, textAlign: "center", marginBottom: 12 }}>🗑️</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#FF2D2D", fontFamily: "'Playfair Display', serif", textAlign: "center", marginBottom: 8 }}>Final Confirmation</div>
+          <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.7, marginBottom: 20, lineHeight: 1.7, textAlign: "center" }}>
+            Tap the button below to permanently delete your account. There is no going back.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              onClick={executeDelete}
+              disabled={deleting}
+              style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5, opacity: deleting ? 0.7 : 1 }}>
+              {deleting ? "Deleting..." : "Permanently Delete Account"}
+            </button>
+            <button
+              onClick={() => setDeleteStep(0)}
+              disabled={deleting}
+              style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-  )}
-
-  {/* Delete account — step 1: warning */}
-  {deleteStep === 1 && (
-    <div style={{ background: "rgba(255,45,45,0.08)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.3)` }}>
-      <div style={{ fontSize: 22, textAlign: "center", marginBottom: 12 }}>⚠️</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", textAlign: "center", marginBottom: 8 }}>Are you sure?</div>
-      <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.7, marginBottom: 20, lineHeight: 1.7, textAlign: "center" }}>
-        This will permanently delete your account, all your crowd reports, stories, and saved deals. This cannot be undone.
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <button
-          onClick={() => setDeleteStep(2)}
-          style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
-          Yes, Delete My Account
-        </button>
-        <button
-          onClick={() => setDeleteStep(0)}
-          style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  )}
-
-  {/* Delete account — step 2: final confirmation */}
-  {deleteStep === 2 && (
-    <div style={{ background: "rgba(255,45,45,0.1)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.4)` }}>
-      <div style={{ fontSize: 22, textAlign: "center", marginBottom: 12 }}>🗑️</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: "#FF2D2D", fontFamily: "'Playfair Display', serif", textAlign: "center", marginBottom: 8 }}>Final Confirmation</div>
-      <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.7, marginBottom: 20, lineHeight: 1.7, textAlign: "center" }}>
-        Tap the button below to permanently delete your account. There is no going back.
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <button
-          onClick={executeDelete}
-          disabled={deleting}
-          style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5, opacity: deleting ? 0.7 : 1 }}>
-          {deleting ? "Deleting..." : "Permanently Delete Account"}
-        </button>
-        <button
-          onClick={() => setDeleteStep(0)}
-          disabled={deleting}
-          style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  )}
-</div>
-```
-
-);
+  );
 }
 
 // ── Main App ───────────────────────────────────────────
