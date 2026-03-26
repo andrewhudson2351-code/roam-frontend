@@ -88,7 +88,7 @@ function loadGoogleMaps() {
   return new Promise(resolve => {
     if (window.google?.maps) { resolve(); return; }
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=visualization`;
     s.onload = resolve;
     document.head.appendChild(s);
   });
@@ -129,90 +129,45 @@ const blobCfg = {
 };
 
 function HeatBlobOverlay({ venues, mapInstance }) {
-  const svgRef = useRef(null);
-  const rafRef = useRef(null);
+  const heatmapRef = useRef(null);
 
   useEffect(() => {
-    if (!mapInstance || !svgRef.current) return;
+    if (!mapInstance || !window.google?.maps) return;
 
-    function update() {
-      const bounds = mapInstance.getBounds();
-      if (!bounds) return;
-      const div = mapInstance.getDiv();
-      const W = div.offsetWidth, H = div.offsetHeight;
-      const ne = bounds.getNorthEast(), sw = bounds.getSouthWest();
-      const latRange = ne.lat() - sw.lat(), lngRange = ne.lng() - sw.lng();
+    const points = venues
+      .filter(v => (v.busy_score || 0) > 0)
+      .map(v => ({
+        location: new window.google.maps.LatLng(
+          parseFloat(v.latitude),
+          parseFloat(v.longitude)
+        ),
+        weight: v.busy_score || 0,
+      }));
 
-      function toXY(lat, lng) {
-        return {
-          x: ((lng - sw.lng()) / lngRange) * W,
-          y: ((ne.lat() - lat) / latRange) * H,
-        };
-      }
-
-      const svgEl = svgRef.current;
-      const defs = svgEl.querySelector("defs");
-      const blobsG = svgEl.querySelector(".blobs");
-      if (!defs || !blobsG) return;
-
-      svgEl.setAttribute("width", W);
-      svgEl.setAttribute("height", H);
-      svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`);
-      defs.innerHTML = "";
-      blobsG.innerHTML = "";
-
-      const active = venues.filter(v => scoreToHeat(v.busy_score || 0) !== "quiet");
-      ["moderate","buzzing","busy","packed"].forEach(tier => {
-        active
-          .filter(v => scoreToHeat(v.busy_score || 0) === tier)
-          .forEach(v => {
-            const { x, y } = toXY(parseFloat(v.latitude), parseFloat(v.longitude));
-            if (isNaN(x) || isNaN(y)) return;
-            const cfg = blobCfg[tier];
-            const col = heatColor[tier];
-            const rx = cfg.rx * W, ry = cfg.ry * H;
-            const gId = `rg_${v.id}`;
-
-            const grad = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
-            grad.setAttribute("id", gId);
-            grad.setAttribute("cx", "50%"); grad.setAttribute("cy", "50%"); grad.setAttribute("r", "50%");
-            [[0, cfg.coreOp],[0.18, cfg.coreOp * 0.85],[0.40, cfg.midOp],[0.68, cfg.rimOp],[1.0, 0]].forEach(([offset, op]) => {
-              const stop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-              stop.setAttribute("offset", `${offset * 100}%`);
-              stop.setAttribute("stop-color", col);
-              stop.setAttribute("stop-opacity", op);
-              grad.appendChild(stop);
-            });
-            defs.appendChild(grad);
-
-            const ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-            ellipse.setAttribute("cx", x); ellipse.setAttribute("cy", y);
-            ellipse.setAttribute("rx", rx); ellipse.setAttribute("ry", ry);
-            ellipse.setAttribute("fill", `url(#${gId})`);
-            blobsG.appendChild(ellipse);
-          });
-      });
+    if (heatmapRef.current) {
+      heatmapRef.current.setMap(null);
     }
 
-    update();
-    const l1 = mapInstance.addListener("idle", update);
-    const l2 = mapInstance.addListener("bounds_changed", () => {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(update);
+    heatmapRef.current = new window.google.maps.visualization.HeatmapLayer({
+      data: points,
+      map: mapInstance,
+      radius: 80,
+      opacity: 0.7,
+      gradient: [
+        "rgba(0,0,0,0)",
+        "rgba(200,169,110,0.3)",
+        "rgba(200,169,110,0.6)",
+        "rgba(240,192,64,0.8)",
+        "rgba(255,122,0,0.9)",
+        "rgba(255,45,45,1)",
+      ],
     });
+
     return () => {
-      window.google?.maps.event.removeListener(l1);
-      window.google?.maps.event.removeListener(l2);
-      cancelAnimationFrame(rafRef.current);
+      if (heatmapRef.current) heatmapRef.current.setMap(null);
     };
   }, [mapInstance, venues]);
 
-  return (
-    <svg ref={svgRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", mixBlendMode: "multiply", zIndex: 2, width: "100%", height: "100%" }}>
-      <defs /><g className="blobs" />
-    </svg>
-  );
-}
 
 // ── Auth Screen ────────────────────────────────────────
 function AuthScreen({ onAuth }) {
