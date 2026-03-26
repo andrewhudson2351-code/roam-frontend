@@ -163,11 +163,13 @@ function HeatBlobOverlay({ venues, mapInstance }) {
       ],
     });
 
-    return () => {
+return () => {
       if (heatmapRef.current) heatmapRef.current.setMap(null);
     };
   }, [mapInstance, venues]);
 
+  return null;
+}
 
 // ── Auth Screen ────────────────────────────────────────
 function AuthScreen({ onAuth }) {
