@@ -758,6 +758,7 @@ function DashboardScreen({ token, user }) {
       )}
     </div>
   );
+}
 
 // ── Main App ───────────────────────────────────────────
 export default function RoamApp() {
