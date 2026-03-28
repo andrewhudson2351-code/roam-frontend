@@ -611,7 +611,6 @@ setReporting(false);
     }
     setUpgrading(false);
   }
-  }
 
   async function openPortal() {
   ...
