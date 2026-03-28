@@ -540,6 +540,7 @@ function DashboardScreen({ token, user }) {
   const [searching, setSearching] = useState(false);
   const [claimTarget, setClaimTarget] = useState(null);
   const [claiming, setClaiming] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => { loadMyVenues(); }, []);
 
@@ -594,6 +595,19 @@ function DashboardScreen({ token, user }) {
     setReporting(false);
   }
 
+setReporting(false);
+  }
+
+  async function startUpgrade(targetPlan) {
+  ...
+  }
+
+  async function openPortal() {
+  ...
+  }
+
+  const inputStyle = ...
+  
   const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 12, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
 
   if (claimView === "search" || claimView === "confirm") {
