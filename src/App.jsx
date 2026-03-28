@@ -599,7 +599,18 @@ setReporting(false);
   }
 
   async function startUpgrade(targetPlan) {
-  ...
+    setUpgrading(true);
+    const data = await apiFetch("/api/billing/create-checkout", {
+      method: "POST",
+      body: JSON.stringify({ venue_id: selected, plan: targetPlan }),
+    }, token);
+    if (data.url) {
+      window.open(data.url, "_blank");
+    } else {
+      alert(data.error || "Failed to start checkout.");
+    }
+    setUpgrading(false);
+  }
   }
 
   async function openPortal() {
