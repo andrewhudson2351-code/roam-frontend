@@ -725,6 +725,38 @@ setReporting(false);
             ))}
           </div>
 
+{/* Plan & Upgrade */}
+<div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+    <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase" }}>Current Plan</div>
+    <div style={{ background: dash.venue?.plan === "premium" ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.1)", borderRadius: 8, padding: "3px 10px" }}>
+      <span style={{ fontSize: 10, color: dash.venue?.plan === "premium" ? C.carbon : C.aureus, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>
+        {dash.venue?.plan || "free"}
+      </span>
+    </div>
+  </div>
+  {(!dash.venue?.plan || dash.venue?.plan === "free") && (
+    <div style={{ display: "flex", gap: 8 }}>
+      <button onClick={() => startUpgrade("pro")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, background: "rgba(200,169,110,0.08)", cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Pro</div>
+        <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>$49/mo</div>
+        <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Analytics · Trends</div>
+      </button>
+      <button onClick={() => startUpgrade("premium")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid ${C.aureus}`, background: `linear-gradient(135deg, rgba(200,169,110,0.15), rgba(200,169,110,0.05))`, cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Premium ✦</div>
+        <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>$149/mo</div>
+        <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Featured · Boost</div>
+      </button>
+    </div>
+  )}
+  {dash.venue?.plan && dash.venue.plan !== "free" && (
+    <button onClick={openPortal} style={{ width: "100%", padding: "10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 11, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
+      Manage Subscription →
+    </button>
+  )}
+</div>
+
+          
           {/* Self-reporting widget */}
           <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
             <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>How busy are you right now?</div>
