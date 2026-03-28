@@ -617,9 +617,6 @@ setReporting(false);
     const data = await apiFetch(`/api/billing/portal?venue_id=${selected}`, {}, token);
     if (data.url) window.open(data.url, "_blank");
   }
-  }
-
-  const inputStyle = ...
   
   const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 12, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
 
