@@ -613,7 +613,10 @@ setReporting(false);
   }
 
   async function openPortal() {
-  ...
+  async function openPortal() {
+    const data = await apiFetch(`/api/billing/portal?venue_id=${selected}`, {}, token);
+    if (data.url) window.open(data.url, "_blank");
+  }
   }
 
   const inputStyle = ...
