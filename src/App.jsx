@@ -754,7 +754,6 @@ setReporting(false);
       Manage Subscription →
     </button>
   )}
-</div>
 
           
           {/* Self-reporting widget */}
