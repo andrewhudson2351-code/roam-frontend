@@ -735,16 +735,6 @@ setReporting(false);
             ))}
           </div>
 
-{/* Plan & Upgrade */}
-<div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-    <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase" }}>Current Plan</div>
-    <div style={{ background: dash.venue?.plan === "premium" ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.1)", borderRadius: 8, padding: "3px 10px" }}>
-      <span style={{ fontSize: 10, color: dash.venue?.plan === "premium" ? C.carbon : C.aureus, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>
-        {dash.venue?.plan || "free"}
-      </span>
-    </div>
-  </div>
   {(!dash.venue?.plan || dash.venue?.plan === "free") && (
     <div style={{ display: "flex", gap: 8 }}>
       <button onClick={() => startUpgrade("pro")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, background: "rgba(200,169,110,0.08)", cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
