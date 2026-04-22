@@ -7,7 +7,6 @@ import BillingDashboard from "./BillingDashboard";
 const API = "https://roam-backend-production.up.railway.app";
 const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
 
-// ── Brand palette ──────────────────────────────────────
 const C = {
   aureus:   "#C8A96E",
   ivory:    "#E8D5A3",
@@ -22,13 +21,7 @@ const C = {
   mapBg:    "#0E0F0B",
 };
 
-const heatColor = {
-  packed:   C.packed,
-  busy:     C.busy,
-  buzzing:  C.buzzing,
-  moderate: C.moderate,
-  quiet:    C.quiet,
-};
+const heatColor = { packed: C.packed, busy: C.busy, buzzing: C.buzzing, moderate: C.moderate, quiet: C.quiet };
 
 function scoreToHeat(score) {
   if (score >= 80) return "packed";
@@ -82,8 +75,6 @@ function timeAgo(dateStr) {
 
 const EMOJIS = ["🔥","🍺","🎵","🍸","🎸","💃","🎉","🌙"];
 
-const DARK_MAP_STYLE = [];
-
 function loadGoogleMaps() {
   return new Promise(resolve => {
     if (window.google?.maps) { resolve(); return; }
@@ -94,7 +85,6 @@ function loadGoogleMaps() {
   });
 }
 
-// ── Compass icon ───────────────────────────────────────
 function Compass({ size = 28 }) {
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} style={{ flexShrink: 0 }}>
@@ -119,59 +109,26 @@ function Compass({ size = 28 }) {
   );
 }
 
-// ── SVG Blob Layer ─────────────────────────────────────
-const blobCfg = {
-  packed:   { rx: 0.08, ry: 0.06, coreOp: 0.45, midOp: 0.22, rimOp: 0.06 },
-  busy:     { rx: 0.06, ry: 0.045, coreOp: 0.32, midOp: 0.16, rimOp: 0.04 },
-  buzzing:  { rx: 0.05, ry: 0.035, coreOp: 0.22, midOp: 0.10, rimOp: 0.02 },
-  moderate: { rx: 0.035, ry: 0.025, coreOp: 0.12, midOp: 0.05, rimOp: 0.01 },
-  quiet:    { rx: 0,    ry: 0,     coreOp: 0,    midOp: 0,    rimOp: 0    },
-};
-
 function HeatBlobOverlay({ venues, mapInstance }) {
   const heatmapRef = useRef(null);
-
   useEffect(() => {
     if (!mapInstance || !window.google?.maps) return;
-
     const points = venues
       .filter(v => (v.busy_score || 0) > 0)
       .map(v => ({
-        location: new window.google.maps.LatLng(
-          parseFloat(v.latitude),
-          parseFloat(v.longitude)
-        ),
+        location: new window.google.maps.LatLng(parseFloat(v.latitude), parseFloat(v.longitude)),
         weight: v.busy_score || 0,
       }));
-
-    if (heatmapRef.current) {
-      heatmapRef.current.setMap(null);
-    }
-
+    if (heatmapRef.current) heatmapRef.current.setMap(null);
     heatmapRef.current = new window.google.maps.visualization.HeatmapLayer({
-      data: points,
-      map: mapInstance,
-      radius: 80,
-      opacity: 0.7,
-      gradient: [
-        "rgba(0,0,0,0)",
-        "rgba(200,169,110,0.3)",
-        "rgba(200,169,110,0.6)",
-        "rgba(240,192,64,0.8)",
-        "rgba(255,122,0,0.9)",
-        "rgba(255,45,45,1)",
-      ],
+      data: points, map: mapInstance, radius: 80, opacity: 0.7,
+      gradient: ["rgba(0,0,0,0)","rgba(200,169,110,0.3)","rgba(200,169,110,0.6)","rgba(240,192,64,0.8)","rgba(255,122,0,0.9)","rgba(255,45,45,1)"],
     });
-
-return () => {
-      if (heatmapRef.current) heatmapRef.current.setMap(null);
-    };
+    return () => { if (heatmapRef.current) heatmapRef.current.setMap(null); };
   }, [mapInstance, venues]);
-
   return null;
 }
 
-// ── Auth Screen ────────────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", username: "" });
@@ -196,9 +153,7 @@ function AuthScreen({ onAuth }) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, background: C.mapBg }}>
       <Compass size={48} />
       <div style={{ fontSize: 28, fontWeight: 700, color: C.marble, marginTop: 14, marginBottom: 4, fontFamily: "'Playfair Display', serif", letterSpacing: 3 }}>ROAMAN</div>
-      <div style={{ fontSize: 14, color: C.aureus, marginBottom: 6, fontFamily: "'EB Garamond', serif", fontStyle: "italic", textAlign: "center" }}>
-        "When in Roam, Do as the Romans Do"
-      </div>
+      <div style={{ fontSize: 14, color: C.aureus, marginBottom: 6, fontFamily: "'EB Garamond', serif", fontStyle: "italic", textAlign: "center" }}>"When in Roam, Do as the Romans Do"</div>
       <div style={{ fontSize: 9, color: C.aureus, marginBottom: 32, fontFamily: "sans-serif", letterSpacing: 3, textTransform: "uppercase", opacity: 0.5 }}>The Navigator</div>
       <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
         {mode === "register" && (
@@ -223,7 +178,6 @@ function AuthScreen({ onAuth }) {
   );
 }
 
-// ── Heatmap Screen ─────────────────────────────────────
 function HeatmapScreen({ token }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
@@ -231,7 +185,6 @@ function HeatmapScreen({ token }) {
   const [loading, setLoading] = useState(true);
   const [currentCity, setCurrentCity] = useState("Charlotte");
   const [pulse, setPulse] = useState(true);
-  const [mapReady, setMapReady] = useState(false);
   const [mapInstance, setMapInstance] = useState(null);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -242,12 +195,8 @@ function HeatmapScreen({ token }) {
     loadGoogleMaps().then(() => {
       if (!mapRef.current) return;
       mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
-        center: { lat: 35.2271, lng: -80.8431 },
-        zoom: 14,
-        styles: [],
-        disableDefaultUI: true,
-        zoomControl: true,
-        gestureHandling: "greedy",
+        center: { lat: 35.2271, lng: -80.8431 }, zoom: 14, styles: [],
+        disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy",
       });
       setMapInstance(mapInstanceRef.current);
       idleListenerRef.current = mapInstanceRef.current.addListener("idle", () => {
@@ -255,7 +204,6 @@ function HeatmapScreen({ token }) {
         const city = getCityFromCoords(center.lat(), center.lng());
         setCurrentCity(city);
         loadVenues(city);
-        setMapReady(true);
       });
     });
     const t = setInterval(() => setPulse(p => !p), 1500);
@@ -265,30 +213,27 @@ function HeatmapScreen({ token }) {
     };
   }, []);
 
-async function loadVenues(city = "Charlotte") {
-  setLoading(true);
-  const [venueData, baselineData] = await Promise.all([
-    apiFetch(`/api/venues?city=${encodeURIComponent(city)}`),
-    apiFetch(`/api/venues/baseline?city=${encodeURIComponent(city)}`),
-  ]);
-
-  if (Array.isArray(venueData)) {
-    const baselineMap = {};
-    if (baselineData?.baselines) {
-      baselineData.baselines.forEach(b => { baselineMap[b.venue_id] = b.baseline_score; });
+  async function loadVenues(city = "Charlotte") {
+    setLoading(true);
+    const [venueData, baselineData] = await Promise.all([
+      apiFetch(`/api/venues?city=${encodeURIComponent(city)}`),
+      apiFetch(`/api/venues/baseline?city=${encodeURIComponent(city)}`),
+    ]);
+    if (Array.isArray(venueData)) {
+      const baselineMap = {};
+      if (baselineData?.baselines) {
+        baselineData.baselines.forEach(b => { baselineMap[b.venue_id] = b.baseline_score; });
+      }
+      const merged = venueData.map(v => {
+        const baseline = baselineMap[v.id] || 0;
+        const live = v.busy_score || 0;
+        const finalScore = live > 0 ? Math.round(live * 0.85 + baseline * 0.15) : Math.round(baseline * 0.75);
+        return { ...v, busy_score: finalScore };
+      });
+      setVenues(merged);
     }
-    const merged = venueData.map(v => {
-      const baseline = baselineMap[v.id] || 0;
-      const live = v.busy_score || 0;
-      const finalScore = live > 0
-        ? Math.round(live * 0.85 + baseline * 0.15)
-        : Math.round(baseline * 0.75);
-      return { ...v, busy_score: finalScore, has_baseline: baseline > 0 };
-    });
-    setVenues(merged);
+    setLoading(false);
   }
-  setLoading(false);
-}
 
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google?.maps) return;
@@ -347,9 +292,8 @@ async function loadVenues(city = "Charlotte") {
       </div>
       <div style={{ flex: 1, position: "relative" }}>
         <div ref={mapRef} style={{ position: "absolute", inset: 0 }} />
-{mapInstance && (
-  <HeatBlobOverlay venues={filtered} mapInstance={mapInstance} />
-)}      </div>
+        {mapInstance && <HeatBlobOverlay venues={filtered} mapInstance={mapInstance} />}
+      </div>
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.2)` }}>
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>Loading venues...</span>
@@ -391,7 +335,6 @@ async function loadVenues(city = "Charlotte") {
   );
 }
 
-// ── Stories Screen ─────────────────────────────────────
 function StoriesScreen({ token }) {
   const [stories, setStories] = useState([]);
   const [active, setActive] = useState(null);
@@ -468,7 +411,6 @@ function StoriesScreen({ token }) {
   );
 }
 
-// ── Deals Screen ───────────────────────────────────────
 function DealsScreen({ token }) {
   const [deals, setDeals] = useState([]);
   const [redeemed, setRedeemed] = useState({});
@@ -524,7 +466,6 @@ function DealsScreen({ token }) {
   );
 }
 
-// ── Dashboard Screen ───────────────────────────────────
 function DashboardScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -595,29 +536,18 @@ function DashboardScreen({ token, user }) {
     setReporting(false);
   }
 
-setReporting(false);
-  }
-
   async function startUpgrade(targetPlan) {
     setUpgrading(true);
-    const data = await apiFetch("/api/billing/create-checkout", {
-      method: "POST",
-      body: JSON.stringify({ venue_id: selected, plan: targetPlan }),
-    }, token);
-    if (data.url) {
-      window.open(data.url, "_blank");
-    } else {
-      alert(data.error || "Failed to start checkout.");
-    }
+    const data = await apiFetch("/api/billing/create-checkout", { method: "POST", body: JSON.stringify({ venue_id: selected, plan: targetPlan }) }, token);
+    if (data.url) { window.open(data.url, "_blank"); } else { alert(data.error || "Failed to start checkout."); }
     setUpgrading(false);
   }
 
   async function openPortal() {
-  async function openPortal() {
     const data = await apiFetch(`/api/billing/portal?venue_id=${selected}`, {}, token);
     if (data.url) window.open(data.url, "_blank");
   }
-  
+
   const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 12, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
 
   if (claimView === "search" || claimView === "confirm") {
@@ -725,8 +655,8 @@ setReporting(false);
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
             {[
               { label: "Visitors Today", value: dash.today?.visitor_count || 0, color: C.aureus },
-              { label: "Redemptions",   value: dash.today?.deal_redemptions || 0, color: C.ivory },
-              { label: "Live Score",    value: `${dash.crowd?.busy_score || 0}%`, color: C.buzzing }
+              { label: "Redemptions",    value: dash.today?.deal_redemptions || 0, color: C.ivory },
+              { label: "Live Score",     value: `${dash.crowd?.busy_score || 0}%`, color: C.buzzing }
             ].map(stat => (
               <div key={stat.label} style={{ background: "rgba(200,169,110,0.04)", borderRadius: 14, padding: "12px 10px", border: `1px solid rgba(200,169,110,0.1)`, textAlign: "center" }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: stat.color, fontFamily: "'Playfair Display', serif" }}>{stat.value}</div>
@@ -735,28 +665,34 @@ setReporting(false);
             ))}
           </div>
 
-  {(!dash.venue?.plan || dash.venue?.plan === "free") && (
-    <div style={{ display: "flex", gap: 8 }}>
-      <button onClick={() => startUpgrade("pro")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, background: "rgba(200,169,110,0.08)", cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Pro</div>
-        <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>$49/mo</div>
-        <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Analytics · Trends</div>
-      </button>
-      <button onClick={() => startUpgrade("premium")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid ${C.aureus}`, background: `linear-gradient(135deg, rgba(200,169,110,0.15), rgba(200,169,110,0.05))`, cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Premium ✦</div>
-        <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>$149/mo</div>
-        <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Featured · Boost</div>
-      </button>
-    </div>
-  )}
-  {dash.venue?.plan && dash.venue.plan !== "free" && (
-    <button onClick={openPortal} style={{ width: "100%", padding: "10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 11, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
-      Manage Subscription →
-    </button>
-  )}
+          <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase" }}>Current Plan</div>
+              <div style={{ background: "rgba(200,169,110,0.1)", borderRadius: 8, padding: "3px 10px" }}>
+                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>{String(dash.venue?.plan || "free")}</span>
+              </div>
+            </div>
+            {(!dash.venue?.plan || dash.venue?.plan === "free") && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => startUpgrade("pro")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, background: "rgba(200,169,110,0.08)", cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Pro</div>
+                  <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>$49/mo</div>
+                  <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Analytics · Trends</div>
+                </button>
+                <button onClick={() => startUpgrade("premium")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid ${C.aureus}`, background: `linear-gradient(135deg, rgba(200,169,110,0.15), rgba(200,169,110,0.05))`, cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Premium ✦</div>
+                  <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>$149/mo</div>
+                  <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Featured · Boost</div>
+                </button>
+              </div>
+            )}
+            {dash.venue?.plan && dash.venue.plan !== "free" && (
+              <button onClick={openPortal} style={{ width: "100%", padding: "10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 11, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
+                Manage Subscription →
+              </button>
+            )}
+          </div>
 
-          
-          {/* Self-reporting widget */}
           <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
             <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>How busy are you right now?</div>
             <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", marginBottom: 12, opacity: 0.5 }}>Update your live status on the heatmap</div>
@@ -780,7 +716,6 @@ setReporting(false);
             )}
           </div>
 
-          {/* Post a deal */}
           <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
             <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Post a Deal</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -825,12 +760,8 @@ setReporting(false);
   );
 }
 
-// ── SettingsScreen ─────────────────────────────────────
-// Add this function to App.jsx before the RoamApp function
-// Then add a Settings tab to the tab bar
-
 function SettingsScreen({ token, user, onLogout }) {
-  const [deleteStep, setDeleteStep] = useState(0); // 0=idle, 1=warning, 2=confirm
+  const [deleteStep, setDeleteStep] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
   async function executeDelete() {
@@ -847,23 +778,16 @@ function SettingsScreen({ token, user, onLogout }) {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: C.mapBg }}>
-      {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Account</div>
         <div style={{ fontSize: 20, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Settings</div>
       </div>
-
-      {/* User info */}
       <div style={{ background: "rgba(200,169,110,0.06)", borderRadius: 16, padding: 16, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
         <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Profile</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{user?.username}</div>
         <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5 }}>{user?.email}</div>
       </div>
-
-      {/* Divider */}
       <div style={{ height: 1, background: "rgba(200,169,110,0.1)", marginBottom: 12 }} />
-
-      {/* Delete account — step 0: idle button */}
       {deleteStep === 0 && (
         <div style={{ background: "rgba(255,45,45,0.04)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.12)` }}>
           <div style={{ fontSize: 9, color: "rgba(255,45,45,0.7)", fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Danger Zone</div>
@@ -871,15 +795,11 @@ function SettingsScreen({ token, user, onLogout }) {
           <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, marginBottom: 14, lineHeight: 1.6 }}>
             Permanently delete your account and all associated data. This cannot be undone.
           </div>
-          <button
-            onClick={() => setDeleteStep(1)}
-            style={{ width: "100%", padding: "11px", borderRadius: 12, border: `1px solid rgba(255,45,45,0.3)`, background: "rgba(255,45,45,0.08)", color: "#FF2D2D", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
+          <button onClick={() => setDeleteStep(1)} style={{ width: "100%", padding: "11px", borderRadius: 12, border: `1px solid rgba(255,45,45,0.3)`, background: "rgba(255,45,45,0.08)", color: "#FF2D2D", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
             Delete My Account
           </button>
         </div>
       )}
-
-      {/* Delete account — step 1: warning */}
       {deleteStep === 1 && (
         <div style={{ background: "rgba(255,45,45,0.08)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.3)` }}>
           <div style={{ fontSize: 22, textAlign: "center", marginBottom: 12 }}>⚠️</div>
@@ -888,21 +808,11 @@ function SettingsScreen({ token, user, onLogout }) {
             This will permanently delete your account, all your crowd reports, stories, and saved deals. This cannot be undone.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button
-              onClick={() => setDeleteStep(2)}
-              style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>
-              Yes, Delete My Account
-            </button>
-            <button
-              onClick={() => setDeleteStep(0)}
-              style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
-              Cancel
-            </button>
+            <button onClick={() => setDeleteStep(2)} style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>Yes, Delete My Account</button>
+            <button onClick={() => setDeleteStep(0)} style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>Cancel</button>
           </div>
         </div>
       )}
-
-      {/* Delete account — step 2: final confirmation */}
       {deleteStep === 2 && (
         <div style={{ background: "rgba(255,45,45,0.1)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.4)` }}>
           <div style={{ fontSize: 22, textAlign: "center", marginBottom: 12 }}>🗑️</div>
@@ -911,18 +821,10 @@ function SettingsScreen({ token, user, onLogout }) {
             Tap the button below to permanently delete your account. There is no going back.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button
-              onClick={executeDelete}
-              disabled={deleting}
-              style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5, opacity: deleting ? 0.7 : 1 }}>
+            <button onClick={executeDelete} disabled={deleting} style={{ padding: "12px", borderRadius: 12, border: "none", background: "#FF2D2D", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5, opacity: deleting ? 0.7 : 1 }}>
               {deleting ? "Deleting..." : "Permanently Delete Account"}
             </button>
-            <button
-              onClick={() => setDeleteStep(0)}
-              disabled={deleting}
-              style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
-              Cancel
-            </button>
+            <button onClick={() => setDeleteStep(0)} disabled={deleting} style={{ padding: "12px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>Cancel</button>
           </div>
         </div>
       )}
@@ -930,7 +832,6 @@ function SettingsScreen({ token, user, onLogout }) {
   );
 }
 
-// ── Main App ───────────────────────────────────────────
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
@@ -964,14 +865,13 @@ export default function RoamApp() {
   const currentUser = user || savedUser;
   const currentToken = token || savedToken;
 
-const tabs = [
-  { id: "map",       icon: "🗺️", label: "Map" },
-  { id: "stories",   icon: "📸", label: "Stories" },
-  { id: "deals",     icon: "✦",  label: "Deals" },
-  { id: "dashboard", icon: "⊙",  label: "Business" },
-  { id: "settings", icon: "⚙️", label: "Settings" },
-];
-
+  const tabs = [
+    { id: "map",       icon: "🗺️", label: "Map" },
+    { id: "stories",   icon: "📸", label: "Stories" },
+    { id: "deals",     icon: "✦",  label: "Deals" },
+    { id: "dashboard", icon: "⊙",  label: "Business" },
+    { id: "settings",  icon: "⚙️", label: "Settings" },
+  ];
 
   return (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", background: "#060608", fontFamily: "'EB Garamond', Georgia, serif" }}>
@@ -1005,8 +905,7 @@ const tabs = [
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
-              {tab === "settings" && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} />}
-
+              {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} />}
             </>
           )}
         </div>
