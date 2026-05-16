@@ -538,13 +538,13 @@ function DashboardScreen({ token, user }) {
 
   async function startUpgrade(targetPlan) {
     setUpgrading(true);
-    const data = await apiFetch("/api/billing/create-checkout", { method: "POST", body: JSON.stringify({ venue_id: selected, plan: targetPlan }) }, token);
+    const data = await apiFetch("/api/stripe/create-checkout-session", { method: "POST", body: JSON.stringify({ venueId: selected, tier: targetPlan }) }, token);
     if (data.url) { window.open(data.url, "_blank"); } else { alert(data.error || "Failed to start checkout."); }
     setUpgrading(false);
   }
 
   async function openPortal() {
-    const data = await apiFetch(`/api/billing/portal?venue_id=${selected}`, {}, token);
+    const data = await apiFetch("/api/stripe/create-portal-session", { method: "POST", body: JSON.stringify({ venueId: selected }) }, token);
     if (data.url) window.open(data.url, "_blank");
   }
 
@@ -669,10 +669,10 @@ function DashboardScreen({ token, user }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase" }}>Current Plan</div>
               <div style={{ background: "rgba(200,169,110,0.1)", borderRadius: 8, padding: "3px 10px" }}>
-                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>{String(dash.venue?.plan || "free")}</span>
+                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>{String(dash.venue?.tier || "free")}</span>
               </div>
             </div>
-            {(!dash.venue?.plan || dash.venue?.plan === "free") && (
+            {(!dash.venue?.tier || dash.venue?.tier === "free") && (
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => startUpgrade("pro")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, background: "rgba(200,169,110,0.08)", cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Pro</div>
@@ -686,7 +686,7 @@ function DashboardScreen({ token, user }) {
                 </button>
               </div>
             )}
-            {dash.venue?.plan && dash.venue.plan !== "free" && (
+            {dash.venue?.tier && dash.venue.tier !== "free" && (
               <button onClick={openPortal} style={{ width: "100%", padding: "10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 11, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
                 Manage Subscription →
               </button>
