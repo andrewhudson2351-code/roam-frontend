@@ -131,7 +131,7 @@ function HeatBlobOverlay({ venues, mapInstance }) {
 
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ email: "", password: "", username: "" });
+  const [form, setForm] = useState({ email: "", password: "", username: "", home_city: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -157,8 +157,12 @@ function AuthScreen({ onAuth }) {
       <div style={{ fontSize: 9, color: C.aureus, marginBottom: 32, fontFamily: "sans-serif", letterSpacing: 3, textTransform: "uppercase", opacity: 0.5 }}>The Navigator</div>
       <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
         {mode === "register" && (
-          <input placeholder="Username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-            style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+          <>
+            <input placeholder="Username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+              style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+            <input placeholder="Home City (optional)" value={form.home_city} onChange={e => setForm(f => ({ ...f, home_city: e.target.value }))}
+              style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+          </>
         )}
         <input placeholder="Email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
           style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
