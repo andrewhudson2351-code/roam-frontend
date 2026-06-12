@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Map as MapboxMap, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { Capacitor } from "@capacitor/core";
 import PricingPage from "./PricingPage";
 import BillingSuccess from "./BillingSuccess";
 import BillingCancel from "./BillingCancel";
 import BillingDashboard from "./BillingDashboard";
 
 const API = "https://roam-backend-production.up.railway.app";
+const IS_NATIVE = Capacitor.isNativePlatform();
 
 const C = {
   aureus:   "#C8A96E",
@@ -714,7 +716,11 @@ function DashboardScreen({ token, user }) {
                 <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>{String(dash.venue?.plan || "free")}</span>
               </div>
             </div>
-            {(!dash.venue?.plan || dash.venue?.plan === "free") && (
+            {(!dash.venue?.plan || dash.venue?.plan === "free") && (IS_NATIVE ? (
+              <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif", textAlign: "center", padding: "10px 0" }}>
+                Visit roaman.app to upgrade
+              </div>
+            ) : (
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => startUpgrade("pro")} disabled={upgrading} style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, background: "rgba(200,169,110,0.08)", cursor: "pointer", fontFamily: "inherit", opacity: upgrading ? 0.6 : 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>Pro</div>
@@ -727,12 +733,16 @@ function DashboardScreen({ token, user }) {
                   <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 4 }}>Featured · Boost</div>
                 </button>
               </div>
-            )}
-            {dash.venue?.plan && dash.venue.plan !== "free" && (
+            ))}
+            {dash.venue?.plan && dash.venue.plan !== "free" && (IS_NATIVE ? (
+              <div style={{ width: "100%", padding: 10, textAlign: "center", color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>
+                Manage at roaman.app
+              </div>
+            ) : (
               <button onClick={openPortal} style={{ width: "100%", padding: "10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 11, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>
                 Manage Subscription →
               </button>
-            )}
+            ))}
           </div>
 
           <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
@@ -784,7 +794,7 @@ function DashboardScreen({ token, user }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Heatmap Boost</div>
-                <div style={{ fontSize: 10, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>Highlighted on map · $149/mo</div>
+                <div style={{ fontSize: 10, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>{IS_NATIVE ? "Highlighted on map" : "Highlighted on map · $149/mo"}</div>
               </div>
               <div onClick={() => toggleBoost(!dash.venue?.heatmap_boost)} style={{ width: 44, height: 24, borderRadius: 12, background: dash.venue?.heatmap_boost ? C.aureus : "rgba(200,169,110,0.1)", position: "relative", cursor: "pointer", transition: "all 0.3s" }}>
                 <div style={{ position: "absolute", top: 2, left: dash.venue?.heatmap_boost ? 22 : 2, width: 20, height: 20, borderRadius: "50%", background: C.marble, transition: "all 0.3s" }} />

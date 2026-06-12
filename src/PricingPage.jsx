@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 
 const TIERS = [
   {
@@ -50,6 +51,13 @@ const TIERS = [
 const API = import.meta.env.VITE_API_URL;
 
 export default function PricingPage({ user, getToken, venue }) {
+  if (Capacitor.isNativePlatform()) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0E0F0B", color: "#C8A96E", fontFamily: "'EB Garamond', serif", fontSize: 16, textAlign: "center", padding: 32 }}>
+        Visit roaman.app to manage your subscription
+      </div>
+    );
+  }
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState(null);
   const currentTier = venue?.tier ?? 'free';
