@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Map as MapboxMap, Source, Layer } from "react-map-gl/mapbox";
+import "mapbox-gl/dist/mapbox-gl.css";
 import PricingPage from "./PricingPage";
 import BillingSuccess from "./BillingSuccess";
 import BillingCancel from "./BillingCancel";
 import BillingDashboard from "./BillingDashboard";
 
 const API = "https://roam-backend-production.up.railway.app";
-const MAPS_KEY = "AIzaSyAKVJVUifzdT7yes3rZqGSIwW6bWgdRmXc";
 
 const C = {
   aureus:   "#C8A96E",
@@ -75,16 +76,6 @@ function timeAgo(dateStr) {
 
 const EMOJIS = ["🔥","🍺","🎵","🍸","🎸","💃","🎉","🌙"];
 
-function loadGoogleMaps() {
-  return new Promise(resolve => {
-    if (window.google?.maps) { resolve(); return; }
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
-    s.onload = resolve;
-    document.head.appendChild(s);
-  });
-}
-
 function Compass({ size = 28 }) {
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} style={{ flexShrink: 0 }}>
@@ -109,32 +100,36 @@ function Compass({ size = 28 }) {
   );
 }
 
-function HeatBlobOverlay({ venues, mapInstance }) {
-  const circlesRef = useRef([]);
-  useEffect(() => {
-    if (!mapInstance || !window.google?.maps) return;
-    circlesRef.current.forEach(c => c.setMap(null));
-    circlesRef.current = [];
-    venues
-      .filter(v => (v.busy_score || 0) > 0)
-      .forEach(v => {
-        const lat = parseFloat(v.latitude), lng = parseFloat(v.longitude);
-        if (isNaN(lat) || isNaN(lng)) return;
-        const score = v.busy_score || 0;
-        circlesRef.current.push(new window.google.maps.Circle({
-          map: mapInstance,
-          center: { lat, lng },
-          radius: 120 + (score / 100) * 330,
-          fillColor: getBusyColor(score),
-          fillOpacity: 0.25,
-          strokeWeight: 0,
-          clickable: false,
-        }));
-      });
-    return () => { circlesRef.current.forEach(c => c.setMap(null)); circlesRef.current = []; };
-  }, [mapInstance, venues]);
-  return null;
-}
+const HEATMAP_LAYER = {
+  id: "venue-heat",
+  type: "heatmap",
+  paint: {
+    "heatmap-weight": ["/", ["get", "busy_score"], 100],
+    "heatmap-intensity": 1,
+    "heatmap-radius": 60,
+    "heatmap-opacity": 0.7,
+    "heatmap-color": [
+      "interpolate", ["linear"], ["heatmap-density"],
+      0, "rgba(0,0,0,0)",
+      0.2, "rgba(65,105,225,0.5)",
+      0.4, "rgba(46,204,113,0.6)",
+      0.6, "rgba(240,192,64,0.7)",
+      0.8, "rgba(255,122,0,0.85)",
+      1, "rgba(255,45,45,1)",
+    ],
+  },
+};
+
+const CIRCLE_LAYER = {
+  id: "venue-points",
+  type: "circle",
+  paint: {
+    "circle-radius": ["step", ["get", "busy_score"], 6, 60, 7, 80, 8],
+    "circle-color": ["get", "color"],
+    "circle-stroke-color": "#FAFAF8",
+    "circle-stroke-width": 1.5,
+  },
+};
 
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
@@ -198,11 +193,7 @@ function HeatmapScreen({ token, user }) {
   const [mode, setMode] = useState("visitor");
   const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
-  const [mapInstance, setMapInstance] = useState(null);
   const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const markersRef = useRef([]);
-  const idleListenerRef = useRef(null);
 
   useEffect(() => {
     if (modeOverrideRef.current) return;
@@ -211,26 +202,27 @@ function HeatmapScreen({ token, user }) {
   }, [currentCity, user]);
 
   useEffect(() => {
-    loadGoogleMaps().then(() => {
-      if (!mapRef.current) return;
-      mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
-        center: { lat: 35.2271, lng: -80.8431 }, zoom: 14, styles: [],
-        disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy",
-      });
-      setMapInstance(mapInstanceRef.current);
-      idleListenerRef.current = mapInstanceRef.current.addListener("idle", () => {
-        const center = mapInstanceRef.current.getCenter();
-        const city = getCityFromCoords(center.lat(), center.lng());
-        setCurrentCity(city);
-        loadVenues(city);
-      });
-    });
+    loadVenues("Charlotte");
     const t = setInterval(() => setPulse(p => !p), 1500);
-    return () => {
-      clearInterval(t);
-      if (idleListenerRef.current) window.google?.maps.event.removeListener(idleListenerRef.current);
-    };
+    return () => clearInterval(t);
   }, []);
+
+  function handleMoveEnd(evt) {
+    const { latitude, longitude } = evt.viewState;
+    const city = getCityFromCoords(latitude, longitude);
+    setCurrentCity(city);
+    loadVenues(city);
+  }
+
+  function handleMapClick(evt) {
+    const f = evt.features && evt.features[0];
+    if (!f) return;
+    const venue = venues.find(v => v.id === f.properties.id);
+    if (venue) {
+      setActiveVenue(venue);
+      mapRef.current?.flyTo({ center: [parseFloat(venue.longitude), parseFloat(venue.latitude)] });
+    }
+  }
 
   async function loadVenues(city = "Charlotte") {
     setLoading(true);
@@ -254,26 +246,6 @@ function HeatmapScreen({ token, user }) {
     setLoading(false);
   }
 
-  useEffect(() => {
-    if (!mapInstanceRef.current || !window.google?.maps) return;
-    markersRef.current.forEach(m => m.setMap(null));
-    markersRef.current = [];
-    const filtered = filter === "All" ? venues : venues.filter(v => v.category === filter);
-    filtered.forEach(venue => {
-      const score = venue.busy_score || 0;
-      const color = getBusyColor(score);
-      const pos = { lat: parseFloat(venue.latitude), lng: parseFloat(venue.longitude) };
-      if (isNaN(pos.lat) || isNaN(pos.lng)) return;
-      const marker = new window.google.maps.Marker({
-        position: pos, map: mapInstanceRef.current, title: venue.name,
-        icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: score >= 80 ? 8 : score >= 60 ? 7 : 6, fillColor: color, fillOpacity: 1, strokeColor: C.marble, strokeWeight: 1.5 },
-        zIndex: score,
-      });
-      marker.addListener("click", () => { setActiveVenue(venue); mapInstanceRef.current.panTo(pos); });
-      markersRef.current.push(marker);
-    });
-  }, [venues, filter]);
-
   async function reportCrowd(venueId, level) {
     await apiFetch(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
     loadVenues(currentCity);
@@ -281,8 +253,8 @@ function HeatmapScreen({ token, user }) {
   }
 
   function goToCity(city) {
-    const c = CITIES.find(c => c.name === city);
-    if (c && mapInstanceRef.current) { mapInstanceRef.current.panTo({ lat: c.lat, lng: c.lng }); mapInstanceRef.current.setZoom(14); }
+    const c = CITIES.find(x => x.name === city);
+    if (c) mapRef.current?.flyTo({ center: [c.lng, c.lat], zoom: 14 });
   }
 
   const filters = ["All", "Bar", "Club", "Restaurant"];
@@ -299,6 +271,16 @@ function HeatmapScreen({ token, user }) {
     return [...list].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0));
   }
   const filtered = sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
+  const geojson = {
+    type: "FeatureCollection",
+    features: filtered
+      .filter(v => !isNaN(parseFloat(v.latitude)) && !isNaN(parseFloat(v.longitude)))
+      .map(v => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [parseFloat(v.longitude), parseFloat(v.latitude)] },
+        properties: { id: v.id, busy_score: v.busy_score || 0, color: getBusyColor(v.busy_score || 0) },
+      })),
+  };
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: C.mapBg }}>
@@ -332,8 +314,21 @@ function HeatmapScreen({ token, user }) {
         ))}
       </div>
       <div style={{ flex: 1, position: "relative" }}>
-        <div ref={mapRef} style={{ position: "absolute", inset: 0 }} />
-        {mapInstance && <HeatBlobOverlay venues={filtered} mapInstance={mapInstance} />}
+        <MapboxMap
+          ref={mapRef}
+          mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+          initialViewState={{ latitude: 35.2271, longitude: -80.8431, zoom: 14 }}
+          mapStyle="mapbox://styles/mapbox/dark-v11"
+          style={{ position: "absolute", inset: 0 }}
+          onMoveEnd={handleMoveEnd}
+          onClick={handleMapClick}
+          interactiveLayerIds={["venue-points"]}
+        >
+          <Source id="venues" type="geojson" data={geojson}>
+            <Layer {...HEATMAP_LAYER} />
+            <Layer {...CIRCLE_LAYER} />
+          </Source>
+        </MapboxMap>
       </div>
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.2)` }}>
@@ -343,7 +338,7 @@ function HeatmapScreen({ token, user }) {
       {!activeVenue && filtered.length > 0 && (
         <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {filtered.slice(0, 8).map(v => (
-            <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }}
+            <div key={v.id} onClick={() => { setActiveVenue(v); mapRef.current?.flyTo({ center: [parseFloat(v.longitude), parseFloat(v.latitude)] }); }}
               style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.marble, whiteSpace: "nowrap", fontFamily: "'EB Garamond', serif" }}>{v.name}</div>
               {mode === "local" && (v.busy_score || 0) <= 40 && (
