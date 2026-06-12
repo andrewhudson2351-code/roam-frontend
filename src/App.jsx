@@ -79,7 +79,7 @@ function loadGoogleMaps() {
   return new Promise(resolve => {
     if (window.google?.maps) { resolve(); return; }
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=visualization`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
     s.onload = resolve;
     document.head.appendChild(s);
   });
@@ -110,21 +110,28 @@ function Compass({ size = 28 }) {
 }
 
 function HeatBlobOverlay({ venues, mapInstance }) {
-  const heatmapRef = useRef(null);
+  const circlesRef = useRef([]);
   useEffect(() => {
     if (!mapInstance || !window.google?.maps) return;
-    const points = venues
+    circlesRef.current.forEach(c => c.setMap(null));
+    circlesRef.current = [];
+    venues
       .filter(v => (v.busy_score || 0) > 0)
-      .map(v => ({
-        location: new window.google.maps.LatLng(parseFloat(v.latitude), parseFloat(v.longitude)),
-        weight: v.busy_score || 0,
-      }));
-    if (heatmapRef.current) heatmapRef.current.setMap(null);
-    heatmapRef.current = new window.google.maps.visualization.HeatmapLayer({
-      data: points, map: mapInstance, radius: 80, opacity: 0.7,
-      gradient: ["rgba(0,0,0,0)","rgba(200,169,110,0.3)","rgba(200,169,110,0.6)","rgba(240,192,64,0.8)","rgba(255,122,0,0.9)","rgba(255,45,45,1)"],
-    });
-    return () => { if (heatmapRef.current) heatmapRef.current.setMap(null); };
+      .forEach(v => {
+        const lat = parseFloat(v.latitude), lng = parseFloat(v.longitude);
+        if (isNaN(lat) || isNaN(lng)) return;
+        const score = v.busy_score || 0;
+        circlesRef.current.push(new window.google.maps.Circle({
+          map: mapInstance,
+          center: { lat, lng },
+          radius: 120 + (score / 100) * 330,
+          fillColor: getBusyColor(score),
+          fillOpacity: 0.25,
+          strokeWeight: 0,
+          clickable: false,
+        }));
+      });
+    return () => { circlesRef.current.forEach(c => c.setMap(null)); circlesRef.current = []; };
   }, [mapInstance, venues]);
   return null;
 }
