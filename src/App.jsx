@@ -182,18 +182,26 @@ function AuthScreen({ onAuth }) {
   );
 }
 
-function HeatmapScreen({ token }) {
+function HeatmapScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
   const [activeVenue, setActiveVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentCity, setCurrentCity] = useState("Charlotte");
+  const [mode, setMode] = useState("visitor");
+  const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
   const [mapInstance, setMapInstance] = useState(null);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
   const idleListenerRef = useRef(null);
+
+  useEffect(() => {
+    if (modeOverrideRef.current) return;
+    const home = (user?.home_city || "").trim().toLowerCase();
+    setMode(home && home === currentCity.trim().toLowerCase() ? "local" : "visitor");
+  }, [currentCity, user]);
 
   useEffect(() => {
     loadGoogleMaps().then(() => {
@@ -271,13 +279,35 @@ function HeatmapScreen({ token }) {
   }
 
   const filters = ["All", "Bar", "Club", "Restaurant"];
-  const filtered = filter === "All" ? venues : venues.filter(v => v.category === filter);
+  const cityCenter = CITIES.find(c => c.name === currentCity);
+  function sortByMode(list) {
+    if (mode === "local" && cityCenter) {
+      const localScore = v => {
+        const dist = Math.hypot(parseFloat(v.latitude) - cityCenter.lat, parseFloat(v.longitude) - cityCenter.lng);
+        const distScore = Math.min(100, isNaN(dist) ? 100 : dist * 2000);
+        return (v.busy_score || 0) * 0.7 + distScore * 0.3;
+      };
+      return [...list].sort((a, b) => localScore(a) - localScore(b));
+    }
+    return [...list].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0));
+  }
+  const filtered = sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: C.mapBg }}>
       <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%" }}>
         {filters.map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{ padding: "5px 12px", borderRadius: 20, border: `1px solid ${filter === f ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: filter === f ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: filter === f ? C.carbon : C.aureus, backdropFilter: "blur(8px)" }}>{f}</button>
+        ))}
+      </div>
+      <div style={{ position: "absolute", top: 48, left: 12, zIndex: 10, display: "flex", background: "rgba(14,15,11,0.88)", borderRadius: 20, border: `1px solid rgba(200,169,110,0.25)`, padding: 2, backdropFilter: "blur(8px)" }}>
+        {["local", "visitor"].map(m => (
+          <button key={m} onClick={() => { modeOverrideRef.current = true; setMode(m); }}
+            style={{ padding: "5px 14px", borderRadius: 18, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", fontFamily: "sans-serif",
+              background: mode === m ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent",
+              color: mode === m ? C.carbon : C.aureus }}>
+            {m === "local" ? "Local" : "Visitor"}
+          </button>
         ))}
       </div>
       <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -309,6 +339,12 @@ function HeatmapScreen({ token }) {
             <div key={v.id} onClick={() => { setActiveVenue(v); mapInstanceRef.current?.panTo({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) }); }}
               style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.marble, whiteSpace: "nowrap", fontFamily: "'EB Garamond', serif" }}>{v.name}</div>
+              {mode === "local" && (v.busy_score || 0) <= 40 && (
+                <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LOCAL FAVORITE</div>
+              )}
+              {mode === "visitor" && (v.busy_score || 0) >= 60 && (
+                <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>POPULAR</div>
+              )}
               <div style={{ fontSize: 9, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
             </div>
           ))}
@@ -905,7 +941,7 @@ export default function RoamApp() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {!currentUser ? <AuthScreen onAuth={handleAuth} /> : (
             <>
-              {tab === "map"       && <HeatmapScreen token={currentToken} />}
+              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
