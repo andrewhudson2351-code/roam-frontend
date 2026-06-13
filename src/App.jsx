@@ -818,7 +818,7 @@ function SettingsScreen({ token, user, onLogout }) {
 
   async function executeDelete() {
     setDeleting(true);
-    const data = await apiFetch("/api/auth/me", { method: "DELETE" }, token);
+    const data = await apiFetch("/api/auth/account", { method: "DELETE" }, token);
     if (data.success) {
       onLogout();
     } else {
