@@ -2,6 +2,8 @@ workflows:
   ios-workflow:
     name: Roaman iOS
     max_build_duration: 60
+    integrations:
+      app_store_connect: Codemagic CI
     environment:
       vars:
         VITE_MAPBOX_TOKEN: $VITE_MAPBOX_TOKEN
