@@ -5,6 +5,8 @@ workflows:
     integrations:
       app_store_connect: Codemagic CI
     environment:
+      groups:
+        - roaman-secrets
       vars:
         VITE_MAPBOX_TOKEN: $VITE_MAPBOX_TOKEN
       node: latest
