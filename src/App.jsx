@@ -196,6 +196,9 @@ function HeatmapScreen({ token, user }) {
   const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
   const mapRef = useRef(null);
+  const [mapError, setMapError] = useState(
+    import.meta.env.VITE_MAPBOX_TOKEN ? null : "VITE_MAPBOX_TOKEN is missing from the build"
+  );
 
   useEffect(() => {
     if (modeOverrideRef.current) return;
@@ -325,6 +328,7 @@ function HeatmapScreen({ token, user }) {
           onMoveEnd={handleMoveEnd}
           onClick={handleMapClick}
           interactiveLayerIds={["venue-points"]}
+          onError={(e) => setMapError(e?.error?.message || String(e?.error || e))}
         >
           <Source id="venues" type="geojson" data={geojson}>
             <Layer {...HEATMAP_LAYER} />
@@ -332,6 +336,13 @@ function HeatmapScreen({ token, user }) {
           </Source>
         </MapboxMap>
       </div>
+      {/* TEMP DEBUG: TestFlight map diagnosis — remove before release */}
+      {mapError && (
+        <div style={{ position: "absolute", top: 100, left: 12, right: 12, zIndex: 30, background: "rgba(255,45,45,0.92)", borderRadius: 12, padding: "12px 14px", border: "2px solid #fff" }}>
+          <div style={{ color: "#fff", fontSize: 12, fontFamily: "monospace", fontWeight: 700, marginBottom: 4 }}>MAP ERROR</div>
+          <div style={{ color: "#fff", fontSize: 11, fontFamily: "monospace", wordBreak: "break-all" }}>{mapError}</div>
+        </div>
+      )}
       {loading && (
         <div style={{ position: "absolute", top: 50, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.2)` }}>
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>Loading venues...</span>
