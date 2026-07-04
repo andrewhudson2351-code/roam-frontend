@@ -7,8 +7,6 @@ workflows:
     environment:
       groups:
         - roaman-secrets
-      vars:
-        VITE_MAPBOX_TOKEN: $VITE_MAPBOX_TOKEN
       node: latest
       xcode: latest
     scripts:
@@ -16,9 +14,10 @@ workflows:
         script: npm install
       - name: Verify Mapbox token present
         script: |
-          if [ -z "$VITE_MAPBOX_TOKEN" ]; then
-            echo "VITE_MAPBOX_TOKEN is missing — map would be blank"; exit 1
-          fi
+          case "$VITE_MAPBOX_TOKEN" in
+            pk.*) echo "Mapbox token OK" ;;
+            *) echo "VITE_MAPBOX_TOKEN is missing or not a valid pk.* token — map would be blank"; exit 1 ;;
+          esac
       - name: Build web app
         script: npm run build
       - name: Sync Capacitor
