@@ -463,19 +463,39 @@ function StoriesScreen({ token }) {
   const [loading, setLoading] = useState(true);
   const [newCaption, setNewCaption] = useState("");
   const [posting, setPosting] = useState(false);
+  const [venueQuery, setVenueQuery] = useState("");
+  const [venueResults, setVenueResults] = useState([]);
+  const [selectedVenue, setSelectedVenue] = useState(null);
+  const [postError, setPostError] = useState("");
 
   useEffect(() => {
     apiFetch("/api/stories", {}, token).then(data => { if (Array.isArray(data)) setStories(data); setLoading(false); });
   }, []);
 
+  useEffect(() => {
+    if (selectedVenue || venueQuery.trim().length < 2) { setVenueResults([]); return; }
+    const t = setTimeout(() => {
+      apiFetch(`/api/venues/search?q=${encodeURIComponent(venueQuery.trim())}`, {}, token)
+        .then(data => { if (Array.isArray(data)) setVenueResults(data.slice(0, 5)); })
+        .catch(() => setVenueResults([]));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [venueQuery, selectedVenue]);
+
   async function postStory() {
-    if (!newCaption.trim()) return;
-    setPosting(true);
+    if (!newCaption.trim() || !selectedVenue || posting) return;
+    setPosting(true); setPostError("");
     const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
-    await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ caption: newCaption, emoji, visibility: "public" }) }, token);
-    const data = await apiFetch("/api/stories", {}, token);
-    if (Array.isArray(data)) setStories(data);
-    setNewCaption(""); setPosting(false);
+    try {
+      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: "public" }) }, token);
+      if (result?.error) { setPostError(result.error); setPosting(false); return; }
+      const data = await apiFetch("/api/stories", {}, token);
+      if (Array.isArray(data)) setStories(data);
+      setNewCaption(""); setSelectedVenue(null); setVenueQuery("");
+    } catch {
+      setPostError("Failed to post story. Try again.");
+    }
+    setPosting(false);
   }
 
   async function toggleLike(storyId) {
@@ -485,11 +505,37 @@ function StoriesScreen({ token }) {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
-      <div style={{ padding: "12px 16px 8px", display: "flex", gap: 8, borderBottom: `1px solid rgba(200,169,110,0.1)` }}>
-        <input value={newCaption} onChange={e => setNewCaption(e.target.value)} placeholder="What's happening at a venue?"
-          style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
-        <button onClick={postStory} disabled={posting}
-          style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif" }}>Post</button>
+      <div style={{ padding: "12px 16px 8px", borderBottom: `1px solid rgba(200,169,110,0.1)` }}>
+        {selectedVenue ? (
+          <div onClick={() => { setSelectedVenue(null); setVenueQuery(""); }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "5px 12px", borderRadius: 16, background: "rgba(200,169,110,0.15)", border: `1px solid rgba(200,169,110,0.4)`, cursor: "pointer" }}>
+            <span style={{ fontSize: 12, color: C.aureus, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>📍 {selectedVenue.name}</span>
+            <span style={{ fontSize: 11, color: C.aureus, opacity: 0.7 }}>✕</span>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 8, position: "relative" }}>
+            <input value={venueQuery} onChange={e => setVenueQuery(e.target.value)} placeholder="Search for a venue..."
+              style={{ width: "100%", boxSizing: "border-box", background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+            {venueResults.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 40, marginTop: 4, background: C.obsidian, border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 12, overflow: "hidden" }}>
+                {venueResults.map(v => (
+                  <div key={v.id} onClick={() => { setSelectedVenue(v); setVenueResults([]); }}
+                    style={{ padding: "8px 14px", cursor: "pointer", borderBottom: `1px solid rgba(200,169,110,0.08)` }}>
+                    <div style={{ fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{v.name}</div>
+                    <div style={{ fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}>{[v.neighborhood, v.city].filter(Boolean).join(" · ")}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={newCaption} onChange={e => setNewCaption(e.target.value)} placeholder="What's happening at a venue?"
+            style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+          <button onClick={postStory} disabled={posting || !newCaption.trim() || !selectedVenue}
+            style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (posting || !newCaption.trim() || !selectedVenue) ? "default" : "pointer", opacity: (posting || !newCaption.trim() || !selectedVenue) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>Post</button>
+        </div>
+        {postError && <div style={{ marginTop: 6, fontSize: 11, color: "#e07a6a", fontFamily: "'EB Garamond', serif" }}>{postError}</div>}
       </div>
       {active && (
         <div onClick={() => setActive(null)} style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)" }}>
