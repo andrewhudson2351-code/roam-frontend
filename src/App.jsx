@@ -626,6 +626,7 @@ function StoriesScreen({ token }) {
   const [venueResults, setVenueResults] = useState([]);
   const [selectedVenue, setSelectedVenue] = useState(null);
   const [postError, setPostError] = useState("");
+  const [storyVisibility, setStoryVisibility] = useState("public");
 
   useEffect(() => {
     apiFetch("/api/stories", {}, token).then(data => { if (Array.isArray(data)) setStories(data); setLoading(false); });
@@ -646,7 +647,7 @@ function StoriesScreen({ token }) {
     setPosting(true); setPostError("");
     const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
     try {
-      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: "public" }) }, token);
+      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: storyVisibility }) }, token);
       if (result?.error) { setPostError(result.error); setPosting(false); return; }
       const data = await apiFetch("/api/stories", {}, token);
       if (Array.isArray(data)) setStories(data);
@@ -688,6 +689,16 @@ function StoriesScreen({ token }) {
             )}
           </div>
         )}
+        <div style={{ display: "inline-flex", marginBottom: 8, background: "rgba(200,169,110,0.06)", borderRadius: 16, border: `1px solid rgba(200,169,110,0.2)`, padding: 2 }}>
+          {[["public", "🌐 Public"], ["friends", "👥 Friends Only"]].map(([val, label]) => (
+            <button key={val} onClick={() => setStoryVisibility(val)}
+              style={{ padding: "4px 12px", borderRadius: 14, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, fontFamily: "sans-serif", letterSpacing: 0.5,
+                background: storyVisibility === val ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent",
+                color: storyVisibility === val ? C.carbon : C.aureus }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <input value={newCaption} onChange={e => setNewCaption(e.target.value)} placeholder="What's happening at a venue?"
             style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
