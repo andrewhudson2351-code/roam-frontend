@@ -1094,9 +1094,24 @@ function DashboardScreen({ token, user }) {
   );
 }
 
-function SettingsScreen({ token, user, onLogout }) {
+function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
   const [deleteStep, setDeleteStep] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(!!user?.location_sharing);
+  const [savingSharing, setSavingSharing] = useState(false);
+
+  async function toggleSharing() {
+    if (savingSharing) return;
+    const next = !sharing;
+    setSharing(next); setSavingSharing(true);
+    const data = await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify({ location_sharing: next }) }, token).catch(() => null);
+    if (data?.id) {
+      onUserUpdate?.(data);
+    } else {
+      setSharing(!next);
+    }
+    setSavingSharing(false);
+  }
 
   async function executeDelete() {
     setDeleting(true);
@@ -1120,6 +1135,19 @@ function SettingsScreen({ token, user, onLogout }) {
         <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Profile</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{user?.username}</div>
         <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5 }}>{user?.email}</div>
+      </div>
+      <div style={{ background: "rgba(200,169,110,0.06)", borderRadius: 16, padding: 16, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+        <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Privacy</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Share My Location</div>
+          <button onClick={toggleSharing} disabled={savingSharing} aria-label="Toggle location sharing"
+            style={{ width: 44, height: 24, borderRadius: 12, border: `1px solid ${sharing ? C.aureus : "rgba(200,169,110,0.25)"}`, cursor: "pointer", padding: 2, background: sharing ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.08)", display: "flex", justifyContent: sharing ? "flex-end" : "flex-start", opacity: savingSharing ? 0.6 : 1, transition: "all 0.2s" }}>
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: sharing ? C.carbon : "rgba(200,169,110,0.5)" }} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, lineHeight: 1.6 }}>
+          Friends can see which venue you're at. Your location updates when you report a crowd level, and disappears after 30 minutes or when you turn this off.
+        </div>
       </div>
       <div style={{ height: 1, background: "rgba(200,169,110,0.1)", marginBottom: 12 }} />
       {deleteStep === 0 && (
@@ -1240,7 +1268,7 @@ export default function RoamApp() {
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
-              {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} />}
+              {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
             </>
           )}
         </div>
