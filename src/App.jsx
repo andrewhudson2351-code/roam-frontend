@@ -268,6 +268,7 @@ function HeatmapScreen({ token, user }) {
   const [mode, setMode] = useState("visitor");
   const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
+  const [showFriends, setShowFriends] = useState(false);
   const mapRef = useRef(null);
 
   useEffect(() => {
@@ -386,6 +387,10 @@ function HeatmapScreen({ token, user }) {
         <div style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.15)` }}>
           <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>{currentCity}</span>
         </div>
+        <button onClick={() => setShowFriends(true)}
+          style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
+          <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>👥 Friends</span>
+        </button>
       </div>
       <div style={{ position: "absolute", bottom: activeVenue ? 220 : 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
         {CITIES.map(c => (
@@ -452,6 +457,114 @@ function HeatmapScreen({ token, user }) {
           </div>
         </div>
       )}
+      {showFriends && <FriendsScreen token={token} onClose={() => setShowFriends(false)} />}
+    </div>
+  );
+}
+
+function FriendsScreen({ token, onClose }) {
+  const [requests, setRequests] = useState([]);
+  const [friends, setFriends] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [addUsername, setAddUsername] = useState("");
+  const [addMsg, setAddMsg] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null);
+  const [sending, setSending] = useState(false);
+
+  async function reload() {
+    const [reqs, frs] = await Promise.all([
+      apiFetch("/api/friends/requests", {}, token),
+      apiFetch("/api/friends", {}, token),
+    ]);
+    if (Array.isArray(reqs)) setRequests(reqs);
+    if (Array.isArray(frs)) setFriends(frs);
+    setLoading(false);
+  }
+  useEffect(() => { reload(); }, []);
+
+  async function accept(id) { await apiFetch(`/api/friends/${id}/accept`, { method: "PATCH" }, token); reload(); }
+  async function remove(id) { await apiFetch(`/api/friends/${id}`, { method: "DELETE" }, token); setConfirmRemove(null); reload(); }
+
+  async function sendRequest() {
+    if (!addUsername.trim() || sending) return;
+    setSending(true); setAddMsg(null);
+    const result = await apiFetch("/api/friends/request", { method: "POST", body: JSON.stringify({ username: addUsername.trim() }) }, token);
+    if (result?.error) setAddMsg({ ok: false, text: result.error });
+    else { setAddMsg({ ok: true, text: "Request sent!" }); setAddUsername(""); }
+    setSending(false);
+  }
+
+  const Avatar = ({ u }) => (
+    <div style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, background: `linear-gradient(135deg, rgba(200,169,110,0.3), rgba(200,169,110,0.1))`, border: `1px solid rgba(200,169,110,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      {u?.avatar_url
+        ? <img src={u.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        : <span style={{ fontSize: 15, color: C.aureus, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>{(u?.display_name || u?.username || "?")[0].toUpperCase()}</span>}
+    </div>
+  );
+  const sectionLabel = { fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", margin: "16px 0 8px" };
+  const card = { background: "rgba(200,169,110,0.04)", borderRadius: 14, padding: 12, border: `1px solid rgba(200,169,110,0.12)`, display: "flex", gap: 10, alignItems: "center" };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 30, background: C.mapBg, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "14px 16px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid rgba(200,169,110,0.1)` }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Friends</div>
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 18 }}>✕</button>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 20px" }}>
+        {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 24, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading...</div>}
+        {!loading && (
+          <>
+            {requests.length > 0 && (
+              <>
+                <div style={sectionLabel}>Pending Requests</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {requests.map(r => (
+                    <div key={r.friendship_id} style={card}>
+                      <Avatar u={r.requester} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{r.requester?.display_name || r.requester?.username}</div>
+                        <div style={{ fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}>@{r.requester?.username} · {timeAgo(r.created_at)}</div>
+                      </div>
+                      <button onClick={() => accept(r.friendship_id)} style={{ padding: "6px 12px", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 11, cursor: "pointer", fontFamily: "'Playfair Display', serif" }}>Accept</button>
+                      <button onClick={() => remove(r.friendship_id)} style={{ padding: "6px 10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.25)`, background: "transparent", color: C.aureus, fontSize: 11, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>Decline</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            <div style={sectionLabel}>My Friends</div>
+            {friends.length === 0 && <div style={{ fontSize: 12, color: C.marble, opacity: 0.4, fontFamily: "'EB Garamond', serif", padding: "4px 0 8px" }}>No friends yet — add someone below.</div>}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {friends.map(f => (
+                <div key={f.friendship_id} style={card}>
+                  <Avatar u={f.friend} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{f.friend?.display_name || f.friend?.username}</div>
+                    <div style={{ fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}>@{f.friend?.username}</div>
+                    {f.location?.venues?.name && (
+                      <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif", marginTop: 2 }}>📍 at {f.location.venues.name}</div>
+                    )}
+                  </div>
+                  {confirmRemove === f.friendship_id ? (
+                    <button onClick={() => remove(f.friendship_id)} style={{ padding: "6px 10px", borderRadius: 12, border: `1px solid rgba(255,45,45,0.4)`, background: "rgba(255,45,45,0.08)", color: "#FF2D2D", fontSize: 10, cursor: "pointer", fontFamily: "sans-serif", fontWeight: 700 }}>Confirm?</button>
+                  ) : (
+                    <button onClick={() => setConfirmRemove(f.friendship_id)} style={{ padding: "6px 10px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 10, cursor: "pointer", fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>✕ Unfriend</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={sectionLabel}>Add Friend</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={addUsername} onChange={e => { setAddUsername(e.target.value); setAddMsg(null); }} placeholder="Search by username..."
+                onKeyDown={e => { if (e.key === "Enter") sendRequest(); }}
+                style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+              <button onClick={sendRequest} disabled={sending || !addUsername.trim()}
+                style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (sending || !addUsername.trim()) ? "default" : "pointer", opacity: (sending || !addUsername.trim()) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>Send</button>
+            </div>
+            {addMsg && <div style={{ marginTop: 8, fontSize: 11, color: addMsg.ok ? C.aureus : "#e07a6a", fontFamily: "'EB Garamond', serif" }}>{addMsg.text}</div>}
+          </>
+        )}
+      </div>
     </div>
   );
 }
