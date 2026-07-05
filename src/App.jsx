@@ -341,7 +341,11 @@ function HeatmapScreen({ token, user }) {
         const distScore = Math.min(100, isNaN(dist) ? 100 : dist * 2000);
         return (v.busy_score || 0) * 0.7 + distScore * 0.3;
       };
-      return [...list].sort((a, b) => localScore(a) - localScore(b));
+      const hasReports = v => (v.report_count || 0) > 0;
+      return [...list].sort((a, b) => {
+        if (hasReports(a) !== hasReports(b)) return hasReports(a) ? -1 : 1;
+        return localScore(a) - localScore(b);
+      });
     }
     return [...list].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0));
   }
@@ -416,7 +420,7 @@ function HeatmapScreen({ token, user }) {
             <div key={v.id} onClick={() => { setActiveVenue(v); mapRef.current?.flyTo({ center: [parseFloat(v.longitude), parseFloat(v.latitude)] }); }}
               style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.marble, whiteSpace: "nowrap", fontFamily: "'EB Garamond', serif" }}>{v.name}</div>
-              {mode === "local" && (v.busy_score || 0) <= 40 && (
+              {mode === "local" && (v.report_count || 0) > 0 && (v.busy_score || 0) <= 40 && (
                 <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LOCAL FAVORITE</div>
               )}
               {mode === "visitor" && (v.busy_score || 0) >= 60 && (
