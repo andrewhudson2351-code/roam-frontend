@@ -138,10 +138,18 @@ function AuthScreen({ onAuth }) {
   const [form, setForm] = useState({ email: "", password: "", username: "", home_city: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   async function submit() {
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setNotice("");
     try {
+      if (mode === "forgot") {
+        const data = await apiFetch("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email: form.email }) });
+        if (data.error) { setError(data.error); setLoading(false); return; }
+        setNotice("If that email exists, a reset link has been sent. Check your inbox.");
+        setLoading(false);
+        return;
+      }
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body = mode === "login" ? { email: form.email, password: form.password } : form;
       const data = await apiFetch(endpoint, { method: "POST", body: JSON.stringify(body) });
@@ -170,18 +178,83 @@ function AuthScreen({ onAuth }) {
         )}
         <input placeholder="Email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
           style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
-        <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-          style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+        {mode !== "forgot" && (
+          <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+            style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+        )}
         {error && <div style={{ fontSize: 12, color: C.packed, textAlign: "center" }}>{error}</div>}
+        {notice && <div style={{ fontSize: 12, color: C.aureus, textAlign: "center" }}>{notice}</div>}
         <button onClick={submit} disabled={loading}
           style={{ padding: "14px", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 1.5, opacity: loading ? 0.7 : 1 }}>
-          {loading ? "..." : mode === "login" ? "Enter" : "Create Account"}
+          {loading ? "..." : mode === "login" ? "Enter" : mode === "register" ? "Create Account" : "Send Reset Link"}
         </button>
-        <button onClick={() => { setMode(m => m === "login" ? "register" : "login"); setError(""); }}
+        {mode === "login" && (
+          <button onClick={() => { setMode("forgot"); setError(""); setNotice(""); }}
+            style={{ background: "none", border: "none", color: C.aureus, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>
+            Forgot password?
+          </button>
+        )}
+        <button onClick={() => { setMode(m => m === "login" ? "register" : "login"); setError(""); setNotice(""); }}
           style={{ background: "none", border: "none", color: C.aureus, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>
           {mode === "login" ? "Don't have an account? Sign up" : "Already have an account? Log in"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function ResetPasswordScreen() {
+  const token = new URLSearchParams(window.location.search).get("token");
+  const [form, setForm] = useState({ password: "", confirm: "" });
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+
+  const inputStyle = { background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" };
+
+  async function submit() {
+    setError("");
+    if (form.password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (form.password !== form.confirm) { setError("Passwords don't match."); return; }
+    setLoading(true);
+    try {
+      const data = await apiFetch("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password: form.password }) });
+      if (data.error) { setError(data.error); setLoading(false); return; }
+      setDone(true);
+    } catch {
+      setError("Something went wrong. Try again.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, background: C.mapBg }}>
+      <Compass size={48} />
+      <div style={{ fontSize: 28, fontWeight: 700, color: C.marble, marginTop: 14, marginBottom: 24, fontFamily: "'Playfair Display', serif", letterSpacing: 3 }}>ROAMAN</div>
+      {!token ? (
+        <div style={{ fontSize: 14, color: C.marble, textAlign: "center", fontFamily: "'EB Garamond', serif" }}>
+          This reset link is invalid. Request a new one from the login screen.
+        </div>
+      ) : done ? (
+        <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 16, textAlign: "center" }}>
+          <div style={{ fontSize: 15, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>Password updated. You can now log in with your new password.</div>
+          <button onClick={() => { window.location.href = "/"; }}
+            style={{ padding: "14px", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 1.5 }}>
+            Go to Login
+          </button>
+        </div>
+      ) : (
+        <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 14, color: C.marble, textAlign: "center", fontFamily: "'EB Garamond', serif", marginBottom: 8 }}>Choose a new password</div>
+          <input placeholder="New password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} style={inputStyle} />
+          <input placeholder="Confirm new password" type="password" value={form.confirm} onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))} style={inputStyle} />
+          {error && <div style={{ fontSize: 12, color: C.packed, textAlign: "center" }}>{error}</div>}
+          <button onClick={submit} disabled={loading}
+            style={{ padding: "14px", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 1.5, opacity: loading ? 0.7 : 1 }}>
+            {loading ? "..." : "Reset Password"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -894,6 +967,7 @@ export default function RoamApp() {
   const savedUser = (() => { try { return JSON.parse(localStorage.getItem("roam_user") || "null"); } catch { return null; } })();
   const savedToken = localStorage.getItem("roam_token");
 
+  if (path === "/reset-password") return <ResetPasswordScreen />;
   if (path === "/pricing") return <PricingPage user={savedUser} getToken={getToken} venue={null} />;
   if (path === "/billing/success") return <BillingSuccess getToken={getToken} />;
   if (path === "/billing/cancel") return <BillingCancel />;
