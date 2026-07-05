@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Map as MapboxMap, Source, Layer } from "react-map-gl/mapbox";
+import { Map as MapboxMap, Source, Layer, Marker } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Capacitor } from "@capacitor/core";
 import PricingPage from "./PricingPage";
@@ -269,6 +269,8 @@ function HeatmapScreen({ token, user }) {
   const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
   const [showFriends, setShowFriends] = useState(false);
+  const [friendPins, setFriendPins] = useState([]);
+  const [activeFriend, setActiveFriend] = useState(null);
   const mapRef = useRef(null);
 
   useEffect(() => {
@@ -283,6 +285,25 @@ function HeatmapScreen({ token, user }) {
     return () => clearInterval(t);
   }, []);
 
+  async function loadFriends() {
+    const data = await apiFetch("/api/friends", {}, token).catch(() => null);
+    if (!Array.isArray(data)) return;
+    setFriendPins(data.filter(f => {
+      const loc = f.location;
+      return loc && !isNaN(parseFloat(loc.latitude)) && !isNaN(parseFloat(loc.longitude));
+    }));
+  }
+
+  useEffect(() => {
+    loadFriends();
+    const poll = setInterval(() => {
+      if (document.visibilityState === "visible") loadFriends();
+    }, 20000);
+    const onVisible = () => { if (document.visibilityState === "visible") loadFriends(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
+  }, []);
+
   function handleMoveEnd(evt) {
     const { latitude, longitude } = evt.viewState;
     const city = getCityFromCoords(latitude, longitude);
@@ -291,6 +312,7 @@ function HeatmapScreen({ token, user }) {
   }
 
   function handleMapClick(evt) {
+    setActiveFriend(null);
     const f = evt.features && evt.features[0];
     if (!f) return;
     const venue = venues.find(v => v.id === f.properties.id);
@@ -324,6 +346,11 @@ function HeatmapScreen({ token, user }) {
 
   async function reportCrowd(venueId, level) {
     await apiFetch(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
+    const venue = venues.find(v => v.id === venueId);
+    if (venue) {
+      // Backend rejects with 403 when location_sharing is off; ignore silently
+      apiFetch("/api/friends/location", { method: "PATCH", body: JSON.stringify({ venue_id: venueId, latitude: venue.latitude, longitude: venue.longitude, last_seen: new Date().toISOString() }) }, token).catch(() => {});
+    }
     loadVenues(currentCity);
     setActiveVenue(null);
   }
@@ -412,6 +439,16 @@ function HeatmapScreen({ token, user }) {
             <Layer {...HEATMAP_LAYER} />
             <Layer {...CIRCLE_LAYER} />
           </Source>
+          {friendPins.map(f => (
+            <Marker key={f.friendship_id} latitude={parseFloat(f.location.latitude)} longitude={parseFloat(f.location.longitude)} anchor="center">
+              <div onClick={e => { e.stopPropagation(); setActiveFriend(f); }}
+                style={{ width: 28, height: 28, borderRadius: "50%", cursor: "pointer", background: `linear-gradient(135deg, rgba(200,169,110,0.5), rgba(14,15,11,0.9))`, border: `2px solid ${C.aureus}`, boxShadow: `0 0 0 2px rgba(14,15,11,0.9), 0 2px 8px rgba(0,0,0,0.6)`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                {f.friend?.avatar_url
+                  ? <img src={f.friend.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <span style={{ fontSize: 12, color: C.marble, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>{(f.friend?.display_name || f.friend?.username || "?")[0].toUpperCase()}</span>}
+              </div>
+            </Marker>
+          ))}
         </MapboxMap>
       </div>
       {loading && (
@@ -455,6 +492,15 @@ function HeatmapScreen({ token, user }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+      {activeFriend && (
+        <div style={{ position: "absolute", top: 90, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.94)", borderRadius: 14, padding: "10px 16px", border: `1px solid rgba(200,169,110,0.3)`, backdropFilter: "blur(8px)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{activeFriend.friend?.display_name || activeFriend.friend?.username}</div>
+            <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>📍 at {activeFriend.location?.venues?.name || "a venue"}</div>
+          </div>
+          <button onClick={() => setActiveFriend(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 14 }}>✕</button>
         </div>
       )}
       {showFriends && <FriendsScreen token={token} onClose={() => setShowFriends(false)} />}
