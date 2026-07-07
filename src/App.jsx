@@ -1205,6 +1205,27 @@ function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
   );
 }
 
+function OwnedVenueRoute({ user, getToken, Component }) {
+  const [venue, setVenue] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const data = await apiFetch("/api/venues/mine", {}, token);
+        if (Array.isArray(data) && data.length > 0) setVenue(data[0]);
+      } catch (err) {
+        console.error("Failed to load owned venue:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0A0A0A", color: "#888", fontFamily: '"DM Sans", sans-serif', fontSize: 14 }}>Loading…</div>;
+  return <Component user={user} getToken={getToken} venue={venue} />;
+}
+
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
@@ -1216,12 +1237,12 @@ export default function RoamApp() {
   const savedToken = localStorage.getItem("roam_token");
 
   if (path === "/reset-password") return <ResetPasswordScreen />;
-  if (path === "/pricing") return <PricingPage user={savedUser} getToken={getToken} venue={null} />;
+  if (path === "/pricing") return <OwnedVenueRoute user={savedUser} getToken={getToken} Component={PricingPage} />;
   if (path === "/billing/success") return <BillingSuccess getToken={getToken} />;
   if (path === "/billing/cancel") return <BillingCancel />;
   if (path === "/billing") {
     if (!savedUser || !savedToken) { window.location.href = "/"; return null; }
-    return <BillingDashboard user={savedUser} getToken={getToken} venue={null} />;
+    return <OwnedVenueRoute user={savedUser} getToken={getToken} Component={BillingDashboard} />;
   }
 
   function handleAuth(u, t) {

@@ -4,13 +4,6 @@ import { Capacitor } from '@capacitor/core';
 const API = import.meta.env.VITE_API_URL;
 
 export default function BillingDashboard({ user, getToken, venue }) {
-  if (Capacitor.isNativePlatform()) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0E0F0B", color: "#C8A96E", fontFamily: "'EB Garamond', serif", fontSize: 16, textAlign: "center", padding: 32 }}>
-        Visit roaman.app to manage your subscription
-      </div>
-    );
-  }
   const [sub, setSub]             = useState(null);
   const [loading, setLoading]     = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -28,9 +21,10 @@ export default function BillingDashboard({ user, getToken, venue }) {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to load billing info.');
       setSub(data);
-    } catch {
-      setError('Failed to load billing info.');
+    } catch (err) {
+      setError(err.message || 'Failed to load billing info.');
     } finally {
       setLoading(false);
     }
@@ -64,6 +58,14 @@ export default function BillingDashboard({ user, getToken, venue }) {
   function formatDate(dateStr) {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0E0F0B", color: "#C8A96E", fontFamily: "'EB Garamond', serif", fontSize: 16, textAlign: "center", padding: 32 }}>
+        Visit roaman.app to manage your subscription
+      </div>
+    );
   }
 
   return (
