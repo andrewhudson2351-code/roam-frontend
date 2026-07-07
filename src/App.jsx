@@ -80,7 +80,8 @@ function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 const EMOJIS = ["🔥","🍺","🎵","🍸","🎸","💃","🎉","🌙"];
@@ -792,21 +793,31 @@ function DealsScreen({ token }) {
   const [deals, setDeals] = useState([]);
   const [redeemed, setRedeemed] = useState({});
   const [loading, setLoading] = useState(true);
+  const [dealMsg, setDealMsg] = useState(null);
 
   useEffect(() => {
     apiFetch("/api/deals").then(data => { if (Array.isArray(data)) setDeals(data); setLoading(false); });
   }, []);
 
+  useEffect(() => {
+    if (!dealMsg) return;
+    const t = setTimeout(() => setDealMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [dealMsg]);
+
   async function redeem(deal) {
     if (redeemed[deal.id]) return;
     const data = await apiFetch(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
     if (data.success) setRedeemed(r => ({ ...r, [deal.id]: true }));
-    else if (data.error) alert(data.error);
+    else if (data.error) setDealMsg(data.error);
   }
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
       <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12, opacity: 0.7 }}>Tonight's Deals · {deals.length} available</div>
+      {dealMsg && (
+        <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{dealMsg}</div>
+      )}
       {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading deals...</div>}
       {!loading && deals.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>No deals tonight — check back later!</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1163,6 +1174,7 @@ function DashboardScreen({ token, user }) {
 function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
   const [deleteStep, setDeleteStep] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
   const [sharing, setSharing] = useState(!!user?.location_sharing);
   const [savingSharing, setSavingSharing] = useState(false);
 
@@ -1181,11 +1193,12 @@ function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
 
   async function executeDelete() {
     setDeleting(true);
+    setDeleteError(null);
     const data = await apiFetch("/api/auth/account", { method: "DELETE" }, token);
     if (data.success) {
       onLogout();
     } else {
-      alert(data.error || "Failed to delete account. Please try again.");
+      setDeleteError(data.error || "Failed to delete account. Please try again.");
       setDeleting(false);
       setDeleteStep(0);
     }
@@ -1216,6 +1229,12 @@ function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
         </div>
       </div>
       <div style={{ height: 1, background: "rgba(200,169,110,0.1)", marginBottom: 12 }} />
+      {deleteError && (
+        <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <span>{deleteError}</span>
+          <button onClick={() => setDeleteError(null)} style={{ background: "none", border: "none", color: "#FF6B6B", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>✕</button>
+        </div>
+      )}
       {deleteStep === 0 && (
         <div style={{ background: "rgba(255,45,45,0.04)", borderRadius: 16, padding: 16, border: `1px solid rgba(255,45,45,0.12)` }}>
           <div style={{ fontSize: 9, color: "rgba(255,45,45,0.7)", fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Danger Zone</div>
