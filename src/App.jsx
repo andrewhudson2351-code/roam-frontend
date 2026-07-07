@@ -65,8 +65,15 @@ function getCityFromCoords(lat, lng) {
 async function apiFetch(path, options = {}, token = null) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${API}${path}`, { ...options, headers });
-  return res.json();
+  try {
+    const res = await fetch(`${API}${path}`, { ...options, headers });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON body, e.g. 502 HTML */ }
+    if (!res.ok) return { error: data?.error || `Request failed (${res.status})`, status: res.status };
+    return data;
+  } catch {
+    return { error: "Network error. Check your connection." };
+  }
 }
 
 function timeAgo(dateStr) {
@@ -271,7 +278,14 @@ function HeatmapScreen({ token, user }) {
   const [showFriends, setShowFriends] = useState(false);
   const [friendPins, setFriendPins] = useState([]);
   const [activeFriend, setActiveFriend] = useState(null);
+  const [mapMsg, setMapMsg] = useState(null);
   const mapRef = useRef(null);
+
+  useEffect(() => {
+    if (!mapMsg) return;
+    const t = setTimeout(() => setMapMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [mapMsg]);
 
   useEffect(() => {
     if (modeOverrideRef.current) return;
@@ -328,6 +342,7 @@ function HeatmapScreen({ token, user }) {
       apiFetch(`/api/venues?city=${encodeURIComponent(city)}`),
       apiFetch(`/api/venues/baseline?city=${encodeURIComponent(city)}`),
     ]);
+    if (venueData?.error) setMapMsg(venueData.error);
     if (Array.isArray(venueData)) {
       const baselineMap = {};
       if (baselineData?.baselines) {
@@ -345,7 +360,8 @@ function HeatmapScreen({ token, user }) {
   }
 
   async function reportCrowd(venueId, level) {
-    await apiFetch(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
+    const result = await apiFetch(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
+    if (result?.error) { setMapMsg(result.error); return; }
     const venue = venues.find(v => v.id === venueId);
     if (venue) {
       // Backend rejects with 403 when location_sharing is off; ignore silently
@@ -456,6 +472,11 @@ function HeatmapScreen({ token, user }) {
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>Loading venues...</span>
         </div>
       )}
+      {mapMsg && (
+        <div style={{ position: "absolute", top: 80, left: "50%", transform: "translateX(-50%)", zIndex: 25, background: "rgba(42,13,13,0.95)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(255,107,107,0.4)`, maxWidth: "85%", textAlign: "center" }}>
+          <span style={{ color: "#FF6B6B", fontSize: 11, fontFamily: "'EB Garamond', serif" }}>{mapMsg}</span>
+        </div>
+      )}
       {!activeVenue && filtered.length > 0 && (
         <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {filtered.slice(0, 8).map(v => (
@@ -516,6 +537,7 @@ function FriendsScreen({ token, onClose }) {
   const [addMsg, setAddMsg] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [sending, setSending] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   async function reload() {
     const [reqs, frs] = await Promise.all([
@@ -528,8 +550,19 @@ function FriendsScreen({ token, onClose }) {
   }
   useEffect(() => { reload(); }, []);
 
-  async function accept(id) { await apiFetch(`/api/friends/${id}/accept`, { method: "PATCH" }, token); reload(); }
-  async function remove(id) { await apiFetch(`/api/friends/${id}`, { method: "DELETE" }, token); setConfirmRemove(null); reload(); }
+  async function accept(id) {
+    const result = await apiFetch(`/api/friends/${id}/accept`, { method: "PATCH" }, token);
+    if (result?.error) return setActionError(result.error);
+    setActionError(null);
+    reload();
+  }
+  async function remove(id) {
+    const result = await apiFetch(`/api/friends/${id}`, { method: "DELETE" }, token);
+    setConfirmRemove(null);
+    if (result?.error) return setActionError(result.error);
+    setActionError(null);
+    reload();
+  }
 
   async function sendRequest() {
     if (!addUsername.trim() || sending) return;
@@ -558,6 +591,12 @@ function FriendsScreen({ token, onClose }) {
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 20px" }}>
         {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 24, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading...</div>}
+        {actionError && (
+          <div style={{ marginTop: 12, background: "rgba(255,45,45,0.08)", border: `1px solid rgba(255,45,45,0.3)`, borderRadius: 12, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{actionError}</span>
+            <button onClick={() => setActionError(null)} style={{ background: "none", border: "none", color: "#FF6B6B", cursor: "pointer", fontSize: 12 }}>✕</button>
+          </div>
+        )}
         {!loading && (
           <>
             {requests.length > 0 && (
@@ -659,7 +698,8 @@ function StoriesScreen({ token }) {
   }
 
   async function toggleLike(storyId) {
-    await apiFetch(`/api/stories/${storyId}/like`, { method: "POST" }, token);
+    const result = await apiFetch(`/api/stories/${storyId}/like`, { method: "POST" }, token);
+    if (result?.error) return;
     setLiked(l => ({ ...l, [storyId]: !l[storyId] }));
   }
 
@@ -819,6 +859,8 @@ function DashboardScreen({ token, user }) {
   const [claimTarget, setClaimTarget] = useState(null);
   const [claiming, setClaiming] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [dashMsg, setDashMsg] = useState(null);
+  const [claimError, setClaimError] = useState(null);
 
   useEffect(() => { loadMyVenues(); }, []);
 
@@ -832,7 +874,7 @@ function DashboardScreen({ token, user }) {
   async function loadDash(venueId) {
     setLoading(true); setSelected(venueId);
     const data = await apiFetch(`/api/dashboard/${venueId}`, {}, token);
-    if (!data.error) setDash(data);
+    if (data?.error) setDashMsg(data.error); else setDash(data);
     setLoading(false); setClaimView("dashboard");
   }
 
@@ -847,22 +889,27 @@ function DashboardScreen({ token, user }) {
   async function claimVenue() {
     if (!claimTarget) return;
     setClaiming(true);
+    setClaimError(null);
     const data = await apiFetch(`/api/venues/${claimTarget.id}/claim`, { method: "POST" }, token);
-    if (data.success) { setClaimView("success"); setTimeout(() => loadMyVenues(), 1500); }
-    else alert(data.error || "Claim failed.");
+    if (data?.success) { setClaimView("success"); setTimeout(() => loadMyVenues(), 1500); }
+    else setClaimError(data?.error || "Claim failed.");
     setClaiming(false);
   }
 
   async function postDeal() {
-    if (!newDeal.title || !newDeal.expires_at) return alert("Title and expiry required.");
+    if (!newDeal.title || !newDeal.expires_at) return setDashMsg("Deal title and expiry are required.");
     setPosting(true);
-    await apiFetch("/api/deals", { method: "POST", body: JSON.stringify({ venue_id: selected, ...newDeal }) }, token);
+    const result = await apiFetch("/api/deals", { method: "POST", body: JSON.stringify({ venue_id: selected, ...newDeal }) }, token);
+    if (result?.error) { setDashMsg(result.error); setPosting(false); return; }
+    setDashMsg(null);
     setNewDeal({ title: "", detail: "", expires_at: "" });
     loadDash(selected); setPosting(false);
   }
 
   async function toggleBoost(enable) {
-    await apiFetch(`/api/dashboard/${selected}/boost`, { method: "PATCH", body: JSON.stringify({ enable }) }, token);
+    const result = await apiFetch(`/api/dashboard/${selected}/boost`, { method: "PATCH", body: JSON.stringify({ enable }) }, token);
+    if (result?.error) return setDashMsg(result.error);
+    setDashMsg(null);
     loadDash(selected);
   }
 
@@ -876,13 +923,14 @@ function DashboardScreen({ token, user }) {
   async function startUpgrade(targetPlan) {
     setUpgrading(true);
     const data = await apiFetch("/api/stripe/create-checkout-session", { method: "POST", body: JSON.stringify({ venueId: selected, tier: targetPlan }) }, token);
-    if (data.url) { window.open(data.url, "_blank"); } else { alert(data.error || "Failed to start checkout."); }
+    if (data?.url) { window.open(data.url, "_blank"); } else { setDashMsg(data?.error || "Failed to start checkout."); }
     setUpgrading(false);
   }
 
   async function openPortal() {
     const data = await apiFetch("/api/stripe/create-portal-session", { method: "POST", body: JSON.stringify({ venueId: selected }) }, token);
-    if (data.url) window.open(data.url, "_blank");
+    if (data?.url) window.open(data.url, "_blank");
+    else setDashMsg(data?.error || "Failed to open billing portal.");
   }
 
   const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 12, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
@@ -905,6 +953,7 @@ function DashboardScreen({ token, user }) {
             <button onClick={claimVenue} disabled={claiming} style={{ padding: "14px", borderRadius: 14, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", opacity: claiming ? 0.7 : 1, letterSpacing: 0.5 }}>
               {claiming ? "Claiming..." : "✓ Confirm — This Is My Venue"}
             </button>
+            {claimError && <div style={{ fontSize: 12, color: "#FF6B6B", textAlign: "center", fontFamily: "'EB Garamond', serif" }}>{claimError}</div>}
             <button onClick={() => { setClaimView("search"); setClaimTarget(null); }} style={{ padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>← Back</button>
           </div>
         )}
@@ -962,6 +1011,12 @@ function DashboardScreen({ token, user }) {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
+      {dashMsg && (
+        <div style={{ background: "rgba(255,45,45,0.08)", border: `1px solid rgba(255,45,45,0.3)`, borderRadius: 12, padding: "8px 12px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{dashMsg}</span>
+          <button onClick={() => setDashMsg(null)} style={{ background: "none", border: "none", color: "#FF6B6B", cursor: "pointer", fontSize: 12 }}>✕</button>
+        </div>
+      )}
       {dash && (
         <>
           <div style={{ background: `linear-gradient(135deg, rgba(200,169,110,0.12), rgba(45,45,45,0.8))`, borderRadius: 18, padding: 16, marginBottom: 12, border: `1px solid rgba(200,169,110,0.2)` }}>
