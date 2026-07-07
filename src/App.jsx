@@ -872,6 +872,11 @@ function DashboardScreen({ token, user }) {
   const [upgrading, setUpgrading] = useState(false);
   const [dashMsg, setDashMsg] = useState(null);
   const [claimError, setClaimError] = useState(null);
+  const [phoneNeeded, setPhoneNeeded] = useState(false);
+  const [claimPhone, setClaimPhone] = useState("");
+  const [phoneLast4, setPhoneLast4] = useState(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => { loadMyVenues(); }, []);
 
@@ -897,14 +902,44 @@ function DashboardScreen({ token, user }) {
     setSearching(false);
   }
 
-  async function claimVenue() {
+  async function startClaim() {
     if (!claimTarget) return;
     setClaiming(true);
     setClaimError(null);
-    const data = await apiFetch(`/api/venues/${claimTarget.id}/claim`, { method: "POST" }, token);
-    if (data?.success) { setClaimView("success"); setTimeout(() => loadMyVenues(), 1500); }
-    else setClaimError(data?.error || "Claim failed.");
+    const options = { method: "POST" };
+    if (phoneNeeded && claimPhone.trim()) options.body = JSON.stringify({ phone: claimPhone.trim() });
+    const data = await apiFetch(`/api/venues/${claimTarget.id}/claim/start`, options, token);
+    if (data?.success) {
+      setPhoneLast4(data.phone_last4);
+      setOtpCode("");
+      setClaimView("verify");
+    } else if (data?.status === 422 && (data.error || "").startsWith("No phone number available")) {
+      setPhoneNeeded(true);
+      setClaimError(data.error);
+    } else if (data?.status === 403) {
+      setClaimView("review");
+    } else {
+      setClaimError(data?.error || "Failed to start verification.");
+    }
     setClaiming(false);
+  }
+
+  async function confirmClaim() {
+    if (!claimTarget || !otpCode.trim()) return;
+    setVerifying(true);
+    setClaimError(null);
+    const data = await apiFetch(`/api/venues/${claimTarget.id}/claim/confirm`, { method: "POST", body: JSON.stringify({ code: otpCode.trim() }) }, token);
+    if (data?.success) {
+      setClaimView("success");
+      setTimeout(() => loadMyVenues(), 1500);
+    } else if (data?.status === 410 || data?.status === 404) {
+      setClaimError(data?.error || "Verification expired. Please start again.");
+      setOtpCode("");
+      setClaimView("confirm");
+    } else {
+      setClaimError(data?.error || "Verification failed.");
+    }
+    setVerifying(false);
   }
 
   async function postDeal() {
@@ -946,12 +981,12 @@ function DashboardScreen({ token, user }) {
 
   const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 12, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
 
-  if (claimView === "search" || claimView === "confirm") {
+  if (claimView === "search" || claimView === "confirm" || claimView === "verify") {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
         <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid rgba(200,169,110,0.1)` }}>
-          <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>{claimView === "confirm" ? "Confirm Claim" : "Claim Your Venue"}</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{claimView === "confirm" ? claimTarget?.name : "Find your establishment"}</div>
+          <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>{claimView === "confirm" ? "Confirm Claim" : claimView === "verify" ? "Verify Ownership" : "Claim Your Venue"}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{claimView === "search" ? "Find your establishment" : claimTarget?.name}</div>
         </div>
         {claimView === "confirm" && claimTarget && (
           <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -960,12 +995,36 @@ function DashboardScreen({ token, user }) {
               <div style={{ fontSize: 12, color: C.aureus, marginBottom: 2, fontFamily: "'EB Garamond', serif" }}>{claimTarget.address}</div>
               <div style={{ fontSize: 10, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>{claimTarget.neighborhood} · {claimTarget.city}</div>
             </div>
-            <p style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", lineHeight: 1.7, margin: 0, opacity: 0.7 }}>By claiming this venue you confirm you are the owner or authorized representative.</p>
-            <button onClick={claimVenue} disabled={claiming} style={{ padding: "14px", borderRadius: 14, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", opacity: claiming ? 0.7 : 1, letterSpacing: 0.5 }}>
-              {claiming ? "Claiming..." : "✓ Confirm — This Is My Venue"}
+            <p style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", lineHeight: 1.7, margin: 0, opacity: 0.7 }}>To verify you're the owner or an authorized representative, we'll text a verification code to the venue's phone number on file.</p>
+            {phoneNeeded && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input value={claimPhone} onChange={e => setClaimPhone(e.target.value)} type="tel" inputMode="tel" placeholder="Venue phone number, e.g. (704) 555-0123" style={inputStyle} />
+                <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, lineHeight: 1.6 }}>We don't have a phone number for this venue. Enter the venue's business line — claims with a user-supplied number get an extra review.</div>
+              </div>
+            )}
+            <button onClick={startClaim} disabled={claiming || (phoneNeeded && !claimPhone.trim())} style={{ padding: "14px", borderRadius: 14, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", opacity: claiming || (phoneNeeded && !claimPhone.trim()) ? 0.7 : 1, letterSpacing: 0.5 }}>
+              {claiming ? "Sending code..." : "Send Verification Code"}
             </button>
             {claimError && <div style={{ fontSize: 12, color: "#FF6B6B", textAlign: "center", fontFamily: "'EB Garamond', serif" }}>{claimError}</div>}
-            <button onClick={() => { setClaimView("search"); setClaimTarget(null); }} style={{ padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>← Back</button>
+            <button onClick={() => { setClaimView("search"); setClaimTarget(null); setPhoneNeeded(false); setClaimPhone(""); setClaimError(null); }} style={{ padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>← Back</button>
+          </div>
+        )}
+        {claimView === "verify" && claimTarget && (
+          <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ background: "rgba(200,169,110,0.06)", borderRadius: 16, padding: 16, border: `1px solid rgba(200,169,110,0.2)`, textAlign: "center" }}>
+              <div style={{ fontSize: 13, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.8, lineHeight: 1.6 }}>
+                We sent a verification code to the phone number ending in <span style={{ color: C.aureus, fontWeight: 700 }}>•••{phoneLast4}</span>. It expires in 10 minutes.
+              </div>
+            </div>
+            <input value={otpCode} onChange={e => setOtpCode(e.target.value)} onKeyDown={e => e.key === "Enter" && confirmClaim()} type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="Enter code" style={{ ...inputStyle, textAlign: "center", fontSize: 20, letterSpacing: 8, fontFamily: "sans-serif", padding: "14px 12px" }} />
+            <button onClick={confirmClaim} disabled={verifying || !otpCode.trim()} style={{ padding: "14px", borderRadius: 14, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", opacity: verifying || !otpCode.trim() ? 0.7 : 1, letterSpacing: 0.5 }}>
+              {verifying ? "Verifying..." : "✓ Verify & Claim Venue"}
+            </button>
+            {claimError && <div style={{ fontSize: 12, color: "#FF6B6B", textAlign: "center", fontFamily: "'EB Garamond', serif" }}>{claimError}</div>}
+            <button onClick={startClaim} disabled={claiming} style={{ padding: "12px", borderRadius: 14, border: "none", background: "transparent", color: C.aureus, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif", opacity: claiming ? 0.6 : 0.8 }}>
+              {claiming ? "Resending..." : "Didn't get it? Resend code"}
+            </button>
+            <button onClick={() => { setClaimView("confirm"); setOtpCode(""); setClaimError(null); }} style={{ padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>← Back</button>
           </div>
         )}
         {claimView === "search" && (
@@ -992,7 +1051,7 @@ function DashboardScreen({ token, user }) {
                     {v.is_claimed ? (
                       <div style={{ fontSize: 10, color: C.aureus, flexShrink: 0, marginLeft: 8, fontFamily: "sans-serif", opacity: 0.5 }}>Claimed</div>
                     ) : (
-                      <button onClick={() => { setClaimTarget(v); setClaimView("confirm"); }} style={{ background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.carbon, cursor: "pointer", fontFamily: "'Playfair Display', serif", flexShrink: 0, marginLeft: 8 }}>Claim</button>
+                      <button onClick={() => { setClaimTarget(v); setPhoneNeeded(false); setClaimPhone(""); setOtpCode(""); setClaimError(null); setClaimView("confirm"); }} style={{ background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.carbon, cursor: "pointer", fontFamily: "'Playfair Display', serif", flexShrink: 0, marginLeft: 8 }}>Claim</button>
                     )}
                   </div>
                 </div>
@@ -1000,6 +1059,19 @@ function DashboardScreen({ token, user }) {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (claimView === "review") {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 16, background: C.mapBg }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, color: C.aureus }}>!</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: C.marble, textAlign: "center", fontFamily: "'Playfair Display', serif" }}>Submitted for Review</div>
+        <div style={{ fontSize: 13, color: C.aureus, textAlign: "center", fontFamily: "'EB Garamond', serif", lineHeight: 1.6, opacity: 0.8, maxWidth: 300 }}>
+          This venue was previously claimed, so your request needs a manual review before ownership can be transferred. We'll be in touch.
+        </div>
+        <button onClick={() => { setClaimTarget(null); setClaimError(null); setClaimView("search"); }} style={{ marginTop: 8, padding: "12px 24px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.2)`, background: "transparent", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'EB Garamond', serif" }}>← Back to search</button>
       </div>
     );
   }
