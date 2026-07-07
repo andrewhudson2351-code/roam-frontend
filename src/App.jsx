@@ -972,13 +972,13 @@ function DashboardScreen({ token, user }) {
                 </div>
               )}
               {searchResults.map(v => (
-                <div key={v.id} style={{ background: "rgba(200,169,110,0.04)", borderRadius: 14, padding: "14px 16px", border: `1px solid rgba(200,169,110,${v.owner_id ? "0.06" : "0.2"})`, opacity: v.owner_id ? 0.5 : 1 }}>
+                <div key={v.id} style={{ background: "rgba(200,169,110,0.04)", borderRadius: 14, padding: "14px 16px", border: `1px solid rgba(200,169,110,${v.is_claimed ? "0.06" : "0.2"})`, opacity: v.is_claimed ? 0.5 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: C.marble, marginBottom: 2, fontFamily: "'Playfair Display', serif" }}>{v.name}</div>
                       <div style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.8 }}>{v.address}</div>
                     </div>
-                    {v.owner_id ? (
+                    {v.is_claimed ? (
                       <div style={{ fontSize: 10, color: C.aureus, flexShrink: 0, marginLeft: 8, fontFamily: "sans-serif", opacity: 0.5 }}>Claimed</div>
                     ) : (
                       <button onClick={() => { setClaimTarget(v); setClaimView("confirm"); }} style={{ background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.carbon, cursor: "pointer", fontFamily: "'Playfair Display', serif", flexShrink: 0, marginLeft: 8 }}>Claim</button>
