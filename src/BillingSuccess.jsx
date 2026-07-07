@@ -29,8 +29,7 @@ export default function BillingSuccess({ getToken }) {
         } else {
           attemptsRef.current++;
           if (attemptsRef.current >= 15) {
-            setStatus('confirmed');
-            setTier('pro');
+            setStatus('pending');
             clearInterval(pollRef.current);
           }
         }
@@ -43,7 +42,7 @@ export default function BillingSuccess({ getToken }) {
       }
     }
 
-    pollRef.current = setInterval(pollStatus, 1000);
+    pollRef.current = setInterval(pollStatus, 2000);
     pollStatus();
     return () => clearInterval(pollRef.current);
   }, [venueId]);
@@ -76,6 +75,16 @@ export default function BillingSuccess({ getToken }) {
             <h1 style={heading}>You're on <span style={{ color: tierColor }}>{tierLabel}</span></h1>
             <p style={sub}>Redirecting to your dashboard in a moment…</p>
             <button style={{ ...btn, background: tierColor }} onClick={() => window.location.href = '/dashboard'}>
+              Go to dashboard
+            </button>
+          </>
+        )}
+        {status === 'pending' && (
+          <>
+            <div style={{ ...checkCircle, background: '#1A1200', border: '2px solid #3D2E00', color: '#E8A020' }}>!</div>
+            <h1 style={heading}>Payment received — still processing</h1>
+            <p style={sub}>Your upgrade is being confirmed by Stripe. It usually lands within a few minutes — your dashboard will show the new plan automatically.</p>
+            <button style={{ ...btn, background: '#E8A020' }} onClick={() => window.location.href = '/dashboard'}>
               Go to dashboard
             </button>
           </>
