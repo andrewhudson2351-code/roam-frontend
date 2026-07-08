@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Map as MapboxMap, Source, Layer, Marker } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Capacitor } from "@capacitor/core";
@@ -395,8 +395,11 @@ function HeatmapScreen({ token, user }) {
     }
     return [...list].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0));
   }
-  const filtered = sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
-  const geojson = {
+  const filtered = useMemo(
+    () => sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter)),
+    [venues, mode, filter, currentCity]
+  );
+  const geojson = useMemo(() => ({
     type: "FeatureCollection",
     features: filtered
       .filter(v => !isNaN(parseFloat(v.latitude)) && !isNaN(parseFloat(v.longitude)))
@@ -405,7 +408,7 @@ function HeatmapScreen({ token, user }) {
         geometry: { type: "Point", coordinates: [parseFloat(v.longitude), parseFloat(v.latitude)] },
         properties: { id: v.id, busy_score: v.busy_score || 0, color: getBusyColor(v.busy_score || 0) },
       })),
-  };
+  }), [filtered]);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: C.mapBg }}>
