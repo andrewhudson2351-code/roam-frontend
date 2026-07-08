@@ -321,9 +321,10 @@ function HeatmapScreen({ token, user }) {
 
   function handleMoveEnd(evt) {
     const { latitude, longitude } = evt.viewState;
-    const city = getCityFromCoords(latitude, longitude);
-    setCurrentCity(city);
-    loadVenues(city);
+    const detectedCity = getCityFromCoords(latitude, longitude);
+    if (detectedCity === currentCity) return;
+    setCurrentCity(detectedCity);
+    loadVenues(detectedCity);
   }
 
   function handleMapClick(evt) {
