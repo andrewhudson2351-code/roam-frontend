@@ -179,16 +179,16 @@ function AuthScreen({ onAuth }) {
         {mode === "register" && (
           <>
             <input placeholder="Username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-              style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+              style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
             <input placeholder="Home City (optional)" value={form.home_city} onChange={e => setForm(f => ({ ...f, home_city: e.target.value }))}
-              style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+              style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
           </>
         )}
         <input placeholder="Email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-          style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+          style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
         {mode !== "forgot" && (
           <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-            style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+            style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
         )}
         {error && <div style={{ fontSize: 12, color: C.packed, textAlign: "center" }}>{error}</div>}
         {notice && <div style={{ fontSize: 12, color: C.aureus, textAlign: "center" }}>{notice}</div>}
@@ -218,7 +218,7 @@ function ResetPasswordScreen() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
 
-  const inputStyle = { background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 14, fontFamily: "'EB Garamond', serif", outline: "none" };
+  const inputStyle = { background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 12, padding: "12px 16px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" };
 
   async function submit() {
     setError("");
@@ -652,7 +652,7 @@ function FriendsScreen({ token, onClose }) {
             <div style={{ display: "flex", gap: 8 }}>
               <input value={addUsername} onChange={e => { setAddUsername(e.target.value); setAddMsg(null); }} placeholder="Search by username..."
                 onKeyDown={e => { if (e.key === "Enter") sendRequest(); }}
-                style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+                style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
               <button onClick={sendRequest} disabled={sending || !addUsername.trim()}
                 style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (sending || !addUsername.trim()) ? "default" : "pointer", opacity: (sending || !addUsername.trim()) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>Send</button>
             </div>
@@ -676,9 +676,14 @@ function StoriesScreen({ token }) {
   const [selectedVenue, setSelectedVenue] = useState(null);
   const [postError, setPostError] = useState("");
   const [storyVisibility, setStoryVisibility] = useState("public");
+  const [feedError, setFeedError] = useState("");
 
   useEffect(() => {
-    apiFetch("/api/stories", {}, token).then(data => { if (Array.isArray(data)) setStories(data); setLoading(false); });
+    apiFetch("/api/stories", {}, token).then(data => {
+      if (Array.isArray(data)) { setStories(data); setFeedError(""); }
+      else if (data?.error) setFeedError(data.error);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -699,7 +704,8 @@ function StoriesScreen({ token }) {
       const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: storyVisibility }) }, token);
       if (result?.error) { setPostError(result.error); setPosting(false); return; }
       const data = await apiFetch("/api/stories", {}, token);
-      if (Array.isArray(data)) setStories(data);
+      if (Array.isArray(data)) { setStories(data); setFeedError(""); }
+      else if (data?.error) setFeedError(data.error);
       setNewCaption(""); setSelectedVenue(null); setVenueQuery("");
     } catch {
       setPostError("Failed to post story. Try again.");
@@ -725,7 +731,7 @@ function StoriesScreen({ token }) {
         ) : (
           <div style={{ marginBottom: 8, position: "relative" }}>
             <input value={venueQuery} onChange={e => setVenueQuery(e.target.value)} placeholder="Search for a venue..."
-              style={{ width: "100%", boxSizing: "border-box", background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+              style={{ width: "100%", boxSizing: "border-box", background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
             {venueResults.length > 0 && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 40, marginTop: 4, background: C.obsidian, border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 12, overflow: "hidden" }}>
                 {venueResults.map(v => (
@@ -751,7 +757,7 @@ function StoriesScreen({ token }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <input value={newCaption} onChange={e => setNewCaption(e.target.value)} placeholder="What's happening at a venue?"
-            style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 13, fontFamily: "'EB Garamond', serif", outline: "none" }} />
+            style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
           <button onClick={postStory} disabled={posting || !newCaption.trim() || !selectedVenue}
             style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (posting || !newCaption.trim() || !selectedVenue) ? "default" : "pointer", opacity: (posting || !newCaption.trim() || !selectedVenue) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>Post</button>
         </div>
@@ -778,7 +784,8 @@ function StoriesScreen({ token }) {
       )}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
         {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading stories...</div>}
-        {!loading && stories.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>No stories yet — be the first to post!</div>}
+        {!loading && feedError && <div style={{ textAlign: "center", color: "#e07a6a", fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif" }}>{feedError}</div>}
+        {!loading && !feedError && stories.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>No stories yet — be the first to post!</div>}
         {stories.map(s => (
           <div key={s.id} onClick={() => setActive(s)}
             style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, border: `1px solid rgba(200,169,110,0.12)`, cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -988,7 +995,7 @@ function DashboardScreen({ token, user }) {
     else setDashMsg(data?.error || "Failed to open billing portal.");
   }
 
-  const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 12, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
+  const inputStyle = { background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 10, padding: "8px 12px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none", width: "100%" };
 
   if (claimView === "search" || claimView === "confirm" || claimView === "verify") {
     return (
