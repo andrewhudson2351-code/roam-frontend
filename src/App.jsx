@@ -281,6 +281,7 @@ function HeatmapScreen({ token, user }) {
   const [activeFriend, setActiveFriend] = useState(null);
   const [mapMsg, setMapMsg] = useState(null);
   const mapRef = useRef(null);
+  const loadSeqRef = useRef(0);
 
   useEffect(() => {
     if (!mapMsg) return;
@@ -339,11 +340,15 @@ function HeatmapScreen({ token, user }) {
   }
 
   async function loadVenues(city = "Charlotte") {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     const [venueData, baselineData] = await Promise.all([
       apiFetch(`/api/venues?city=${encodeURIComponent(city)}`),
       apiFetch(`/api/venues/baseline?city=${encodeURIComponent(city)}`),
     ]);
+    // A newer load started while this one was in flight; discard this stale
+    // response or it can clobber venues for a different city than currentCity.
+    if (seq !== loadSeqRef.current) return;
     if (venueData?.error) setMapMsg(venueData.error);
     if (Array.isArray(venueData)) {
       const baselineMap = {};
