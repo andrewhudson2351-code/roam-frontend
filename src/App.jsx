@@ -1425,13 +1425,25 @@ export default function RoamApp() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { display: none; }
         body { background: #060608; }
+        .phone-frame {
+          width: 100%;
+          max-width: 430px;
+          height: 100vh;
+          height: 100dvh;
+          padding-top: env(safe-area-inset-top);
+        }
+        /* Desktop/web mockup look — never applies on phones or iPad compatibility mode */
+        @media (min-width: 500px) {
+          .phone-frame {
+            width: 375px;
+            height: 780px;
+            height: min(780px, 96dvh);
+            border-radius: 48px;
+            box-shadow: 0 40px 120px rgba(0,0,0,0.9), 0 0 0 1px rgba(200,169,110,0.15);
+          }
+        }
       `}</style>
-      <div style={{ width: 375, height: 780, background: C.mapBg, borderRadius: 48, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: `0 40px 120px rgba(0,0,0,0.9), 0 0 0 1px rgba(200,169,110,0.15)`, position: "relative" }}>
-        <div style={{ padding: "14px 24px 6px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: C.mapBg }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.marble, opacity: 0.6 }}>9:41</span>
-          <div style={{ width: 120, height: 28, background: "#000", borderRadius: 20, position: "absolute", left: "50%", transform: "translateX(-50%)", top: 8 }} />
-          <span style={{ fontSize: 10, color: C.marble, opacity: 0.35 }}>●●● ▲ ⬛</span>
-        </div>
+      <div className="phone-frame" style={{ background: C.mapBg, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
         {currentUser && (
           <div style={{ padding: "6px 20px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, borderBottom: `1px solid rgba(200,169,110,0.1)` }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1455,7 +1467,7 @@ export default function RoamApp() {
           )}
         </div>
         {currentUser && (
-          <div style={{ padding: "10px 8px 24px", display: "flex", background: "rgba(14,15,11,0.97)", borderTop: `1px solid rgba(200,169,110,0.12)`, flexShrink: 0 }}>
+          <div style={{ padding: "10px 8px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))", display: "flex", background: "rgba(14,15,11,0.97)", borderTop: `1px solid rgba(200,169,110,0.12)`, flexShrink: 0 }}>
             {tabs.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>
                 <div style={{ fontSize: 18, opacity: tab === t.id ? 1 : 0.25 }}>{t.icon}</div>
