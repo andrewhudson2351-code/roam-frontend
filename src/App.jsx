@@ -164,6 +164,18 @@ const DEAL_TAG_GROUPS = {
 };
 const DEAL_TAGS = Object.values(DEAL_TAG_GROUPS).flat();
 
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function recurLabel(d) {
+  const days = d.recur_days.length === 7 ? "Daily" : d.recur_days.map(i => DAY_LABELS[i]).join(", ");
+  const fmt = (t) => {
+    const [h, m] = t.split(":").map(Number);
+    const ap = h >= 12 ? "pm" : "am";
+    const h12 = h % 12 || 12;
+    return m ? `${h12}:${String(m).padStart(2, "0")}${ap}` : `${h12}${ap}`;
+  };
+  return `${days} · ${fmt(d.recur_start)}–${fmt(d.recur_end)}`;
+}
+
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", username: "", home_city: "" });
@@ -919,9 +931,9 @@ function DealsScreen({ token }) {
                     </div>
                   )}
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>Expires</div>
-                  <div style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>{new Date(d.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                <div style={{ textAlign: "right", maxWidth: 110 }}>
+                  <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>{d.recur_days ? "Recurring" : "Expires"}</div>
+                  <div style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>{d.recur_days ? recurLabel(d) : new Date(d.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -943,6 +955,8 @@ function DashboardScreen({ token, user }) {
   const [selected, setSelected] = useState(null);
   const [dash, setDash] = useState(null);
   const [newDeal, setNewDeal] = useState({ title: "", detail: "", expires_at: "", tags: [] });
+  const [dealMode, setDealMode] = useState("once");
+  const [recur, setRecur] = useState({ days: [], start: "", end: "" });
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -1027,13 +1041,21 @@ function DashboardScreen({ token, user }) {
   }
 
   async function postDeal() {
-    if (!newDeal.title || !newDeal.expires_at) return setDashMsg("Deal title and expiry are required.");
+    if (!newDeal.title) return setDashMsg("Deal title is required.");
     if (newDeal.tags.length < 1) return setDashMsg("Pick 1 to 3 tags so people can find your deal.");
+    const recurring = dealMode === "recurring";
+    if (recurring && (recur.days.length < 1 || !recur.start || !recur.end)) return setDashMsg("Pick day(s) and a time window for your recurring deal.");
+    if (!recurring && !newDeal.expires_at) return setDashMsg("Deal expiry is required.");
     setPosting(true);
-    const result = await apiFetch("/api/deals", { method: "POST", body: JSON.stringify({ venue_id: selected, ...newDeal }) }, token);
+    const payload = recurring
+      ? { venue_id: selected, title: newDeal.title, detail: newDeal.detail, tags: newDeal.tags, recur_days: recur.days, recur_start: recur.start, recur_end: recur.end }
+      : { venue_id: selected, ...newDeal };
+    const result = await apiFetch("/api/deals", { method: "POST", body: JSON.stringify(payload) }, token);
     if (result?.error) { setDashMsg(result.error); setPosting(false); return; }
     setDashMsg(null);
     setNewDeal({ title: "", detail: "", expires_at: "", tags: [] });
+    setRecur({ days: [], start: "", end: "" });
+    setDealMode("once");
     loadDash(selected); setPosting(false);
   }
 
@@ -1314,7 +1336,32 @@ function DashboardScreen({ token, user }) {
                   </div>
                 ))}
               </div>
-              <input value={newDeal.expires_at} onChange={e => setNewDeal(d => ({ ...d, expires_at: e.target.value }))} type="datetime-local" style={inputStyle} />
+              <div style={{ display: "flex", background: "rgba(200,169,110,0.05)", borderRadius: 10, border: `1px solid rgba(200,169,110,0.15)`, padding: 2 }}>
+                {[["once", "One-time"], ["recurring", "Recurring"]].map(([m, label]) => (
+                  <button key={m} onClick={() => setDealMode(m)} style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "sans-serif", letterSpacing: 0.5, background: dealMode === m ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", color: dealMode === m ? C.carbon : C.aureus }}>{label}</button>
+                ))}
+              </div>
+              {dealMode === "once" && (
+                <input value={newDeal.expires_at} onChange={e => setNewDeal(d => ({ ...d, expires_at: e.target.value }))} type="datetime-local" style={inputStyle} />
+              )}
+              {dealMode === "recurring" && (
+                <>
+                  <div style={{ display: "flex", gap: 4, justifyContent: "space-between" }}>
+                    {DAY_LABELS.map((label, i) => {
+                      const on = recur.days.includes(i);
+                      return (
+                        <button key={label} onClick={() => setRecur(r => ({ ...r, days: on ? r.days.filter(d => d !== i) : [...r.days, i].sort() }))}
+                          style={{ flex: 1, padding: "6px 0", borderRadius: 8, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, border: `1px solid ${on ? C.aureus : "rgba(200,169,110,0.2)"}`, background: on ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: on ? C.carbon : C.aureus }}>{label[0]}</button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input value={recur.start} onChange={e => setRecur(r => ({ ...r, start: e.target.value }))} type="time" style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>to</span>
+                    <input value={recur.end} onChange={e => setRecur(r => ({ ...r, end: e.target.value }))} type="time" style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                </>
+              )}
               <button onClick={postDeal} disabled={posting} style={{ padding: "10px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>{posting ? "Posting..." : "Post Deal ✦"}</button>
             </div>
           </div>
@@ -1324,7 +1371,10 @@ function DashboardScreen({ token, user }) {
               <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Active Deals</div>
               {dash.active_deals.map(d => (
                 <div key={d.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid rgba(200,169,110,0.08)` }}>
-                  <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{d.title}</div>
+                  <div>
+                    <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{d.title}</div>
+                    {d.recur_days && <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.8, marginTop: 1 }}>↻ {recurLabel(d)}</div>}
+                  </div>
                   <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif" }}>✦ {d.redemption_count}</div>
                 </div>
               ))}
