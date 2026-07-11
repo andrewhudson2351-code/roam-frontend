@@ -141,6 +141,24 @@ const CIRCLE_LAYER = {
   },
 };
 
+const DEAL_CIRCLE_LAYER = {
+  id: "venue-points",
+  type: "circle",
+  paint: {
+    "circle-radius": ["step", ["get", "busy_score"], 8, 60, 9, 80, 10],
+    "circle-color": ["get", "color"],
+    "circle-stroke-color": C.aureus,
+    "circle-stroke-width": 3,
+  },
+};
+
+const DEAL_TAG_GROUPS = {
+  Food: ["Wings", "Tacos", "Brunch", "Pizza", "Apps/Small Plates"],
+  Drinks: ["Happy Hour", "Beer", "Cocktails", "Wine", "Shots"],
+  Occasion: ["Live Music", "Trivia", "Karaoke", "Sports", "Ladies Night"],
+};
+const DEAL_TAGS = Object.values(DEAL_TAG_GROUPS).flat();
+
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", username: "", home_city: "" });
@@ -280,6 +298,8 @@ function HeatmapScreen({ token, user }) {
   const [friendPins, setFriendPins] = useState([]);
   const [activeFriend, setActiveFriend] = useState(null);
   const [mapMsg, setMapMsg] = useState(null);
+  const [dealTag, setDealTag] = useState(null);
+  const [dealVenueIds, setDealVenueIds] = useState(null);
   const mapRef = useRef(null);
   const loadSeqRef = useRef(0);
 
@@ -319,6 +339,17 @@ function HeatmapScreen({ token, user }) {
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
+
+  useEffect(() => {
+    if (!dealTag) { setDealVenueIds(null); return; }
+    let stale = false;
+    apiFetch(`/api/deals?city=${encodeURIComponent(currentCity)}&tag=${encodeURIComponent(dealTag)}`).then(data => {
+      if (stale) return;
+      if (Array.isArray(data)) setDealVenueIds(new Set(data.map(d => d.venue_id)));
+      else { setDealVenueIds(new Set()); if (data?.error) setMapMsg(data.error); }
+    });
+    return () => { stale = true; };
+  }, [dealTag, currentCity]);
 
   function handleMoveEnd(evt) {
     const { latitude, longitude } = evt.viewState;
@@ -400,10 +431,10 @@ function HeatmapScreen({ token, user }) {
     }
     return [...list].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0));
   }
-  const filtered = useMemo(
-    () => sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter)),
-    [venues, mode, filter, currentCity]
-  );
+  const filtered = useMemo(() => {
+    if (dealTag) return sortByMode(dealVenueIds ? venues.filter(v => dealVenueIds.has(v.id)) : []);
+    return sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
+  }, [venues, mode, filter, currentCity, dealTag, dealVenueIds]);
   const geojson = useMemo(() => ({
     type: "FeatureCollection",
     features: filtered
@@ -417,10 +448,21 @@ function HeatmapScreen({ token, user }) {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: C.mapBg }}>
-      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%" }}>
-        {filters.map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{ padding: "5px 12px", borderRadius: 20, border: `1px solid ${filter === f ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: filter === f ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: filter === f ? C.carbon : C.aureus, backdropFilter: "blur(8px)" }}>{f}</button>
-        ))}
+      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%", opacity: dealTag ? 0.45 : 1, transition: "opacity 0.2s" }}>
+        {filters.map(f => {
+          const active = filter === f && !dealTag;
+          return (
+            <button key={f} onClick={() => { setFilter(f); setDealTag(null); }} style={{ padding: "5px 12px", borderRadius: 20, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: active ? C.carbon : C.aureus, backdropFilter: "blur(8px)" }}>{f}</button>
+          );
+        })}
+      </div>
+      <div style={{ position: "absolute", top: 84, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
+        {DEAL_TAGS.map(t => {
+          const active = dealTag === t;
+          return (
+            <button key={t} onClick={() => setDealTag(cur => cur === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 20, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.25)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: active ? C.carbon : C.aureus, backdropFilter: "blur(8px)", whiteSpace: "nowrap", boxShadow: active ? `0 0 10px rgba(200,169,110,0.5)` : "none" }}>✦ {t}</button>
+          );
+        })}
       </div>
       <div style={{ position: "absolute", top: 48, left: 12, zIndex: 10, display: "flex", background: "rgba(14,15,11,0.88)", borderRadius: 20, border: `1px solid rgba(200,169,110,0.25)`, padding: 2, backdropFilter: "blur(8px)" }}>
         {["local", "visitor"].map(m => (
@@ -462,8 +504,9 @@ function HeatmapScreen({ token, user }) {
           interactiveLayerIds={["venue-points"]}
         >
           <Source id="venues" type="geojson" data={geojson}>
-            <Layer {...HEATMAP_LAYER} />
-            <Layer {...CIRCLE_LAYER} />
+            {/* toggle visibility instead of unmounting so layer order stays stable */}
+            <Layer {...HEATMAP_LAYER} layout={{ visibility: dealTag ? "none" : "visible" }} />
+            <Layer {...(dealTag ? DEAL_CIRCLE_LAYER : CIRCLE_LAYER)} />
           </Source>
           {friendPins.map(f => (
             <Marker key={f.friendship_id} latitude={parseFloat(f.location.latitude)} longitude={parseFloat(f.location.longitude)} anchor="center">
@@ -485,6 +528,11 @@ function HeatmapScreen({ token, user }) {
       {mapMsg && (
         <div style={{ position: "absolute", top: 80, left: "50%", transform: "translateX(-50%)", zIndex: 25, background: "rgba(42,13,13,0.95)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(255,107,107,0.4)`, maxWidth: "85%", textAlign: "center" }}>
           <span style={{ color: "#FF6B6B", fontSize: 11, fontFamily: "'EB Garamond', serif" }}>{mapMsg}</span>
+        </div>
+      )}
+      {dealTag && dealVenueIds && dealVenueIds.size === 0 && (
+        <div style={{ position: "absolute", top: 120, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.92)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.3)`, whiteSpace: "nowrap" }}>
+          <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>No {dealTag} deals in {currentCity.split(",")[0]} right now</span>
         </div>
       )}
       {!activeVenue && filtered.length > 0 && (
@@ -810,6 +858,7 @@ function DealsScreen({ token }) {
   const [redeemed, setRedeemed] = useState({});
   const [loading, setLoading] = useState(true);
   const [dealMsg, setDealMsg] = useState(null);
+  const [tagFilter, setTagFilter] = useState(null);
 
   useEffect(() => {
     apiFetch("/api/deals").then(data => { if (Array.isArray(data)) setDeals(data); setLoading(false); });
@@ -828,16 +877,23 @@ function DealsScreen({ token }) {
     else if (data.error) setDealMsg(data.error);
   }
 
+  const visibleDeals = tagFilter ? deals.filter(d => d.tags?.includes(tagFilter)) : deals;
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
-      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12, opacity: 0.7 }}>Tonight's Deals · {deals.length} available</div>
+      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>Tonight's Deals · {visibleDeals.length} available</div>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+        {DEAL_TAGS.map(t => (
+          <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
+        ))}
+      </div>
       {dealMsg && (
         <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{dealMsg}</div>
       )}
       {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading deals...</div>}
-      {!loading && deals.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>No deals tonight — check back later!</div>}
+      {!loading && visibleDeals.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>{tagFilter ? `No ${tagFilter} deals tonight — try another tag.` : "No deals tonight — check back later!"}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {deals.map(d => {
+        {visibleDeals.map(d => {
           const isRedeemed = redeemed[d.id];
           return (
             <div key={d.id} style={{ background: isRedeemed ? "rgba(200,169,110,0.02)" : "rgba(200,169,110,0.05)", borderRadius: 18, padding: 16, border: `1px solid ${isRedeemed ? "rgba(200,169,110,0.06)" : "rgba(200,169,110,0.18)"}`, opacity: isRedeemed ? 0.5 : 1, transition: "all 0.3s" }}>
@@ -850,6 +906,13 @@ function DealsScreen({ token }) {
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</div>
                   <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", marginTop: 2, opacity: 0.6 }}>{d.detail}</div>
+                  {d.tags?.length > 0 && (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>
+                      {d.tags.map(t => (
+                        <span key={t} style={{ fontSize: 9, color: C.aureus, background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 8, padding: "2px 7px", fontFamily: "sans-serif", letterSpacing: 0.5 }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>Expires</div>
@@ -874,7 +937,7 @@ function DashboardScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
   const [dash, setDash] = useState(null);
-  const [newDeal, setNewDeal] = useState({ title: "", detail: "", expires_at: "" });
+  const [newDeal, setNewDeal] = useState({ title: "", detail: "", expires_at: "", tags: [] });
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -960,12 +1023,21 @@ function DashboardScreen({ token, user }) {
 
   async function postDeal() {
     if (!newDeal.title || !newDeal.expires_at) return setDashMsg("Deal title and expiry are required.");
+    if (newDeal.tags.length < 1) return setDashMsg("Pick 1 to 3 tags so people can find your deal.");
     setPosting(true);
     const result = await apiFetch("/api/deals", { method: "POST", body: JSON.stringify({ venue_id: selected, ...newDeal }) }, token);
     if (result?.error) { setDashMsg(result.error); setPosting(false); return; }
     setDashMsg(null);
-    setNewDeal({ title: "", detail: "", expires_at: "" });
+    setNewDeal({ title: "", detail: "", expires_at: "", tags: [] });
     loadDash(selected); setPosting(false);
+  }
+
+  function toggleDealTag(tag) {
+    setNewDeal(d => {
+      if (d.tags.includes(tag)) return { ...d, tags: d.tags.filter(t => t !== tag) };
+      if (d.tags.length >= 3) return d;
+      return { ...d, tags: [...d.tags, tag] };
+    });
   }
 
   async function toggleBoost(enable) {
@@ -1220,6 +1292,23 @@ function DashboardScreen({ token, user }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input value={newDeal.title} onChange={e => setNewDeal(d => ({ ...d, title: e.target.value }))} placeholder="e.g. $5 Margaritas" style={inputStyle} />
               <input value={newDeal.detail} onChange={e => setNewDeal(d => ({ ...d, detail: e.target.value }))} placeholder="Details (e.g. Well drinks only)" style={inputStyle} />
+              <div>
+                <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>Tags · pick 1–3 ({newDeal.tags.length}/3)</div>
+                {Object.entries(DEAL_TAG_GROUPS).map(([group, tags]) => (
+                  <div key={group} style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 8, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>{group}</div>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {tags.map(t => {
+                        const on = newDeal.tags.includes(t);
+                        const full = !on && newDeal.tags.length >= 3;
+                        return (
+                          <button key={t} onClick={() => toggleDealTag(t)} style={{ padding: "4px 10px", borderRadius: 14, cursor: full ? "not-allowed" : "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${on ? C.aureus : "rgba(200,169,110,0.2)"}`, background: on ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: on ? C.carbon : C.aureus, opacity: full ? 0.35 : 1 }}>{t}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
               <input value={newDeal.expires_at} onChange={e => setNewDeal(d => ({ ...d, expires_at: e.target.value }))} type="datetime-local" style={inputStyle} />
               <button onClick={postDeal} disabled={posting} style={{ padding: "10px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>{posting ? "Posting..." : "Post Deal ✦"}</button>
             </div>
