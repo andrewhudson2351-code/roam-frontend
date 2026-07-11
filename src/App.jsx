@@ -302,10 +302,224 @@ function ResetPasswordScreen() {
   );
 }
 
+const HOUR_MARKS = [[0, "6am"], [6, "12pm"], [12, "6pm"], [18, "12am"]];
+
+function VenueDetailScreen({ venue, token, onClose, onReported }) {
+  const [data, setData] = useState(null);
+  const [weekOpen, setWeekOpen] = useState(false);
+  const [photoIdx, setPhotoIdx] = useState(0);
+  const [msg, setMsg] = useState(null);
+  const [reported, setReported] = useState(false);
+
+  useEffect(() => {
+    let stale = false;
+    apiFetch(`/api/venues/${venue.id}`, {}, token).then(d => {
+      if (stale) return;
+      if (d?.error) setMsg(d.error);
+      else if (d) setData(d);
+    });
+    return () => { stale = true; };
+  }, [venue.id]);
+
+  useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [msg]);
+
+  async function report(level) {
+    const result = await apiFetch(`/api/venues/${venue.id}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
+    if (result?.error) { setMsg(result.error); return; }
+    setReported(true);
+    // Backend rejects with 403 when location_sharing is off; ignore silently
+    apiFetch("/api/friends/location", { method: "PATCH", body: JSON.stringify({ venue_id: venue.id, latitude: venue.latitude, longitude: venue.longitude, last_seen: new Date().toISOString() }) }, token).catch(() => {});
+    onReported?.();
+  }
+
+  const v = data || venue;
+  const score = venue.busy_score ?? data?.busy_score ?? 0;
+  const photos = data?.place?.photos || [];
+  const phone = data?.place?.phone || v.phone;
+  const website = data?.place?.website || v.website;
+  const hoursWeek = data?.place?.hours?.descriptions || null;
+  const todayIdx = (new Date().getDay() + 6) % 7; // weekdayDescriptions are Monday-first
+  const description = data?.place?.editorial_summary || v.description;
+  const typical = data?.typical_today;
+  const hasTypical = typical?.hour_data?.some(h => (h || 0) > 0);
+  const friendsHere = data?.friends_here || [];
+  const deals = data?.deals || [];
+  const sectionLabel = { fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", letterSpacing: 1.5, marginBottom: 8 };
+  const actionBtn = { flex: 1, padding: "10px 6px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.25)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif", cursor: "pointer", textAlign: "center", textDecoration: "none" };
+
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 30, background: C.carbon, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <button onClick={onClose} style={{ position: "fixed", top: 14, left: 14, zIndex: 40, width: 34, height: 34, borderRadius: "50%", border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(14,15,11,0.85)", color: C.aureus, fontSize: 16, cursor: "pointer", backdropFilter: "blur(8px)" }}>←</button>
+
+      {photos.length > 0 ? (
+        <div style={{ position: "relative" }}>
+          <div onScroll={e => setPhotoIdx(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
+            style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", height: 230, scrollbarWidth: "none" }}>
+            {photos.map(p => (
+              <div key={p.index} style={{ flexShrink: 0, width: "100%", height: "100%", scrollSnapAlign: "start", position: "relative", background: C.obsidian }}>
+                <img src={`${API}/api/venues/${venue.id}/photos/${p.index}`} alt="" loading="lazy"
+                  onError={e => { e.currentTarget.style.display = "none"; }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {p.attribution && (
+                  <a href={p.attribution_uri || undefined} target="_blank" rel="noreferrer"
+                    style={{ position: "absolute", bottom: 8, right: 10, fontSize: 8, color: "rgba(250,250,248,0.75)", background: "rgba(14,15,11,0.6)", borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", textDecoration: "none" }}>📷 {p.attribution}</a>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(to bottom, rgba(28,28,28,0.35), transparent 30%, transparent 70%, rgba(28,28,28,0.9))" }} />
+          {photos.length > 1 && (
+            <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5 }}>
+              {photos.map((_, i) => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i === photoIdx ? C.aureus : "rgba(250,250,248,0.35)", transition: "background 0.2s" }} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ height: 150, background: `linear-gradient(135deg, ${C.mapBg}, ${C.obsidian})`, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: `1px solid rgba(200,169,110,0.12)` }}>
+          <Compass size={54} />
+        </div>
+      )}
+
+      <div style={{ padding: "16px 18px 90px" }}>
+        <div style={{ fontSize: 24, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", lineHeight: 1.15 }}>{v.name}</div>
+        <div style={{ fontSize: 12, color: C.aureus, marginTop: 4, fontFamily: "'EB Garamond', serif", opacity: 0.85 }}>
+          {[v.category, v.neighborhood, v.city].filter(Boolean).join(" · ")}
+        </div>
+        <div style={{ fontSize: 11, color: C.marble, opacity: 0.5, marginTop: 3, fontFamily: "'EB Garamond', serif" }}>{v.address}</div>
+        {description && <div style={{ fontSize: 12, color: C.marble, opacity: 0.7, marginTop: 10, lineHeight: 1.5, fontFamily: "'EB Garamond', serif" }}>{description}</div>}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          {phone && <a href={`tel:${phone}`} style={actionBtn}>📞 Call</a>}
+          <a href={`https://maps.apple.com/?daddr=${encodeURIComponent(`${v.address}, ${v.city}`)}`} target="_blank" rel="noreferrer" style={actionBtn}>🧭 Directions</a>
+          {website && <a href={website} target="_blank" rel="noreferrer" style={actionBtn}>🌐 Website</a>}
+        </div>
+
+        {hoursWeek && (
+          <div style={{ marginTop: 18, background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid rgba(200,169,110,0.15)` }}>
+            <div onClick={() => setWeekOpen(o => !o)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+              <div>
+                <div style={sectionLabel}>HOURS</div>
+                <div style={{ fontSize: 13, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{hoursWeek[todayIdx]}</div>
+              </div>
+              <span style={{ color: C.aureus, fontSize: 12, transform: weekOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▾</span>
+            </div>
+            {weekOpen && (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+                {hoursWeek.map((line, i) => (
+                  <div key={i} style={{ fontSize: 11, fontFamily: "'EB Garamond', serif", color: i === todayIdx ? C.aureus : C.marble, opacity: i === todayIdx ? 1 : 0.55 }}>{line}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ marginTop: 18 }}>
+          <div style={sectionLabel}>LIVE BUSYNESS</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: getBusyColor(score), boxShadow: `0 0 10px ${getBusyColor(score)}` }} />
+            <span style={{ fontSize: 14, color: getBusyColor(score), fontFamily: "sans-serif", letterSpacing: 1, fontWeight: 700 }}>{getBusyLabel(score).toUpperCase()} · {score}%</span>
+          </div>
+          {hasTypical && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 60 }}>
+                {typical.hour_data.map((val, i) => (
+                  <div key={i} style={{ flex: 1, height: `${Math.max(4, val || 0)}%`, borderRadius: 2, background: i === typical.now_index ? getBusyColor(score) : "rgba(200,169,110,0.28)", boxShadow: i === typical.now_index ? `0 0 6px ${getBusyColor(score)}` : "none" }} />
+                ))}
+              </div>
+              <div style={{ position: "relative", height: 12, marginTop: 4 }}>
+                {HOUR_MARKS.map(([i, label]) => (
+                  <span key={label} style={{ position: "absolute", left: `${(i / 24) * 100}%`, fontSize: 8, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>{label}</span>
+                ))}
+              </div>
+              <div style={{ fontSize: 9, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", letterSpacing: 1 }}>TYPICAL CROWD TODAY</div>
+            </div>
+          )}
+          <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, margin: "14px 0 8px", fontFamily: "sans-serif", letterSpacing: 1.5 }}>HOW BUSY IS IT RIGHT NOW?</div>
+          {reported ? (
+            <div style={{ fontSize: 12, color: C.aureus, fontFamily: "'EB Garamond', serif", padding: "10px 0" }}>✓ Thanks — your report keeps the map live.</div>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              {[["😴", 20, "Quiet"], ["🙂", 50, "Busy"], ["🔥", 85, "Packed"]].map(([emoji, level, label]) => (
+                <button key={level} onClick={() => report(level)}
+                  style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "rgba(200,169,110,0.06)", cursor: "pointer", fontFamily: "inherit" }}>
+                  <div style={{ fontSize: 22 }}>{emoji}</div>
+                  <div style={{ fontSize: 9, color: C.aureus, marginTop: 4, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{label}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {deals.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={sectionLabel}>ACTIVE DEALS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {deals.map(d => (
+                <div key={d.id} style={{ background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid rgba(200,169,110,0.18)` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</span>
+                    {d.recur_days && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
+                    {d.is_premium_only && <span style={{ fontSize: 8, color: C.aureus, background: "rgba(200,169,110,0.1)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 6, padding: "2px 6px" }}>✦ PREMIUM</span>}
+                  </div>
+                  {d.detail && <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>{d.detail}</div>}
+                  <div style={{ fontSize: 10, color: C.aureus, marginTop: 4, fontFamily: "'EB Garamond', serif" }}>
+                    {d.recur_days ? `↻ ${recurLabel(d)}` : `Expires ${new Date(d.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+                  </div>
+                  {d.tags?.length > 0 && (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                      {d.tags.map(t => (
+                        <span key={t} style={{ fontSize: 9, color: C.aureus, background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 8, padding: "2px 7px", fontFamily: "sans-serif", letterSpacing: 0.5 }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {friendsHere.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={sectionLabel}>FRIENDS</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "10px 14px", border: `1px solid rgba(200,169,110,0.18)` }}>
+              <div style={{ display: "flex" }}>
+                {friendsHere.slice(0, 4).map((f, i) => (
+                  <div key={f.id} style={{ width: 28, height: 28, borderRadius: "50%", marginLeft: i ? -8 : 0, background: `linear-gradient(135deg, rgba(200,169,110,0.5), rgba(14,15,11,0.9))`, border: `2px solid ${C.aureus}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {f.avatar_url
+                      ? <img src={f.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <span style={{ fontSize: 11, color: C.marble, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>{(f.display_name || f.username || "?")[0].toUpperCase()}</span>}
+                  </div>
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>
+                {friendsHere.length === 1
+                  ? `${friendsHere[0].display_name || friendsHere[0].username} is here now`
+                  : `${friendsHere.length} friends here now`}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {msg && (
+        <div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 45, background: "rgba(42,13,13,0.95)", borderRadius: 20, padding: "6px 14px", border: `1px solid rgba(255,107,107,0.4)`, maxWidth: "85%", textAlign: "center" }}>
+          <span style={{ color: "#FF6B6B", fontSize: 11, fontFamily: "'EB Garamond', serif" }}>{msg}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HeatmapScreen({ token, user }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
-  const [activeVenue, setActiveVenue] = useState(null);
+  const [detailVenue, setDetailVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentCity, setCurrentCity] = useState("Charlotte");
   const [mode, setMode] = useState("visitor");
@@ -381,10 +595,9 @@ function HeatmapScreen({ token, user }) {
     const f = evt.features && evt.features[0];
     if (!f) return;
     const venue = venues.find(v => v.id === f.properties.id);
-    if (venue) {
-      setActiveVenue(venue);
-      mapRef.current?.flyTo({ center: [parseFloat(venue.longitude), parseFloat(venue.latitude)] });
-    }
+    // no flyTo: the detail page covers the map, and skipping it keeps the
+    // camera exactly where the user left it when they come back
+    if (venue) setDetailVenue(venue);
   }
 
   async function loadVenues(city = "Charlotte") {
@@ -412,18 +625,6 @@ function HeatmapScreen({ token, user }) {
       setVenues(merged);
     }
     setLoading(false);
-  }
-
-  async function reportCrowd(venueId, level) {
-    const result = await apiFetch(`/api/venues/${venueId}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
-    if (result?.error) { setMapMsg(result.error); return; }
-    const venue = venues.find(v => v.id === venueId);
-    if (venue) {
-      // Backend rejects with 403 when location_sharing is off; ignore silently
-      apiFetch("/api/friends/location", { method: "PATCH", body: JSON.stringify({ venue_id: venueId, latitude: venue.latitude, longitude: venue.longitude, last_seen: new Date().toISOString() }) }, token).catch(() => {});
-    }
-    loadVenues(currentCity);
-    setActiveVenue(null);
   }
 
   function goToCity(city) {
@@ -504,7 +705,7 @@ function HeatmapScreen({ token, user }) {
           <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>👥 Friends</span>
         </button>
       </div>
-      <div style={{ position: "absolute", bottom: activeVenue ? 220 : 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
+      <div style={{ position: "absolute", bottom: 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
         {CITIES.map(c => (
           <button key={c.name} onClick={() => goToCity(c.name)} style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 12, border: `1px solid ${currentCity === c.name ? C.aureus : "rgba(200,169,110,0.15)"}`, cursor: "pointer", background: currentCity === c.name ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: currentCity === c.name ? C.carbon : C.marble, fontSize: 9, fontFamily: "'EB Garamond', serif", backdropFilter: "blur(8px)" }}>{c.name.split(",")[0]}</button>
         ))}
@@ -552,10 +753,10 @@ function HeatmapScreen({ token, user }) {
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>No {dealTag} deals in {currentCity.split(",")[0]} right now</span>
         </div>
       )}
-      {!activeVenue && filtered.length > 0 && (
+      {filtered.length > 0 && (
         <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {filtered.slice(0, 8).map(v => (
-            <div key={v.id} onClick={() => { setActiveVenue(v); mapRef.current?.flyTo({ center: [parseFloat(v.longitude), parseFloat(v.latitude)] }); }}
+            <div key={v.id} onClick={() => setDetailVenue(v)}
               style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.marble, whiteSpace: "nowrap", fontFamily: "'EB Garamond', serif" }}>{v.name}</div>
               {mode === "local" && (v.report_count || 0) > 0 && (v.busy_score || 0) <= 40 && (
@@ -569,27 +770,6 @@ function HeatmapScreen({ token, user }) {
           ))}
         </div>
       )}
-      {activeVenue && (
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, background: C.obsidian, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: "20px 20px 32px", borderTop: `1px solid rgba(200,169,110,0.2)` }}>
-          <button onClick={() => setActiveVenue(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 18 }}>✕</button>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.marble, marginBottom: 2, fontFamily: "'Playfair Display', serif" }}>{activeVenue.name}</div>
-          <div style={{ fontSize: 11, color: C.aureus, marginBottom: 10, fontFamily: "'EB Garamond', serif", opacity: 0.8 }}>{activeVenue.neighborhood} · {activeVenue.city}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: getBusyColor(activeVenue.busy_score || 0), boxShadow: `0 0 8px ${getBusyColor(activeVenue.busy_score || 0)}` }} />
-            <span style={{ fontSize: 11, color: getBusyColor(activeVenue.busy_score || 0), fontFamily: "sans-serif", letterSpacing: 1, fontWeight: 700 }}>{getBusyLabel(activeVenue.busy_score || 0).toUpperCase()} · {activeVenue.busy_score || 0}%</span>
-          </div>
-          <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, marginBottom: 10, fontFamily: "sans-serif", letterSpacing: 1.5 }}>HOW BUSY IS IT RIGHT NOW?</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {[["😴", 20, "Quiet"], ["🙂", 50, "Busy"], ["🔥", 85, "Packed"]].map(([emoji, level, label]) => (
-              <button key={level} onClick={() => reportCrowd(activeVenue.id, level)}
-                style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "rgba(200,169,110,0.06)", cursor: "pointer", fontFamily: "inherit" }}>
-                <div style={{ fontSize: 22 }}>{emoji}</div>
-                <div style={{ fontSize: 9, color: C.aureus, marginTop: 4, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{label}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       {activeFriend && (
         <div style={{ position: "absolute", top: 90, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.94)", borderRadius: 14, padding: "10px 16px", border: `1px solid rgba(200,169,110,0.3)`, backdropFilter: "blur(8px)", display: "flex", alignItems: "center", gap: 10 }}>
           <div>
@@ -599,6 +779,7 @@ function HeatmapScreen({ token, user }) {
           <button onClick={() => setActiveFriend(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 14 }}>✕</button>
         </div>
       )}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues(currentCity)} />}
       {showFriends && <FriendsScreen token={token} onClose={() => setShowFriends(false)} />}
     </div>
   );
