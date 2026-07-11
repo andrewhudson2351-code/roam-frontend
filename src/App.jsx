@@ -130,6 +130,9 @@ const HEATMAP_LAYER = {
   },
 };
 
+// Dim quiet venues so active ones carry the visual hierarchy
+const PIN_OPACITY = ["interpolate", ["linear"], ["get", "busy_score"], 25, 0.45, 45, 1];
+
 const CIRCLE_LAYER = {
   id: "venue-points",
   type: "circle",
@@ -138,6 +141,8 @@ const CIRCLE_LAYER = {
     "circle-color": ["get", "color"],
     "circle-stroke-color": "#FAFAF8",
     "circle-stroke-width": 1.5,
+    "circle-opacity": PIN_OPACITY,
+    "circle-stroke-opacity": PIN_OPACITY,
   },
 };
 
