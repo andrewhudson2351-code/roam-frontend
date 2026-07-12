@@ -538,6 +538,7 @@ function HeatmapScreen({ token, user }) {
   const [dealVenueIds, setDealVenueIds] = useState(null);
   const mapRef = useRef(null);
   const loadSeqRef = useRef(0);
+  const moveDebounceRef = useRef(null);
 
   useEffect(() => {
     if (!mapMsg) return;
@@ -551,10 +552,10 @@ function HeatmapScreen({ token, user }) {
     setMode(home && home === currentCity.trim().toLowerCase() ? "local" : "visitor");
   }, [currentCity, user]);
 
+  // initial venue load happens on the map's onLoad (bounds aren't known before then)
   useEffect(() => {
-    loadVenues("Charlotte");
     const t = setInterval(() => setPulse(p => !p), 1500);
-    return () => clearInterval(t);
+    return () => { clearInterval(t); clearTimeout(moveDebounceRef.current); };
   }, []);
 
   async function loadFriends() {
@@ -576,23 +577,25 @@ function HeatmapScreen({ token, user }) {
     return () => { clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
+  // deals are fetched for all cities (only dozens are active) and intersected
+  // with whatever venues are in the viewport, so panning never refetches deals
   useEffect(() => {
     if (!dealTag) { setDealVenueIds(null); return; }
     let stale = false;
-    apiFetch(`/api/deals?city=${encodeURIComponent(currentCity)}&tag=${encodeURIComponent(dealTag)}`).then(data => {
+    apiFetch(`/api/deals?city=&tag=${encodeURIComponent(dealTag)}`).then(data => {
       if (stale) return;
       if (Array.isArray(data)) setDealVenueIds(new Set(data.map(d => d.venue_id)));
       else { setDealVenueIds(new Set()); if (data?.error) setMapMsg(data.error); }
     });
     return () => { stale = true; };
-  }, [dealTag, currentCity]);
+  }, [dealTag]);
 
   function handleMoveEnd(evt) {
     const { latitude, longitude } = evt.viewState;
-    const detectedCity = getCityFromCoords(latitude, longitude);
-    if (detectedCity === currentCity) return;
-    setCurrentCity(detectedCity);
-    loadVenues(detectedCity);
+    // currentCity is display/mode state only — it never drives a fetch
+    setCurrentCity(getCityFromCoords(latitude, longitude));
+    clearTimeout(moveDebounceRef.current);
+    moveDebounceRef.current = setTimeout(loadVenues, 300);
   }
 
   function handleMapClick(evt) {
@@ -605,15 +608,19 @@ function HeatmapScreen({ token, user }) {
     if (venue) setDetailVenue(venue);
   }
 
-  async function loadVenues(city = "Charlotte") {
+  async function loadVenues() {
+    const map = mapRef.current;
+    if (!map) return;
+    const b = map.getBounds();
+    const qs = `swLat=${b.getSouth()}&swLng=${b.getWest()}&neLat=${b.getNorth()}&neLng=${b.getEast()}`;
     const seq = ++loadSeqRef.current;
     setLoading(true);
     const [venueData, baselineData] = await Promise.all([
-      apiFetch(`/api/venues?city=${encodeURIComponent(city)}`),
-      apiFetch(`/api/venues/baseline?city=${encodeURIComponent(city)}`),
+      apiFetch(`/api/venues/bounds?${qs}`),
+      apiFetch(`/api/venues/baseline?${qs}`),
     ]);
     // A newer load started while this one was in flight; discard this stale
-    // response or it can clobber venues for a different city than currentCity.
+    // response or it can clobber venues from an older viewport.
     if (seq !== loadSeqRef.current) return;
     if (venueData?.error) setMapMsg(venueData.error);
     if (Array.isArray(venueData)) {
@@ -722,6 +729,7 @@ function HeatmapScreen({ token, user }) {
           initialViewState={{ latitude: 35.2271, longitude: -80.8431, zoom: 14 }}
           mapStyle="mapbox://styles/mapbox/dark-v11"
           style={{ position: "absolute", inset: 0 }}
+          onLoad={() => loadVenues()}
           onMoveEnd={handleMoveEnd}
           onClick={handleMapClick}
           interactiveLayerIds={["venue-points"]}
@@ -753,9 +761,9 @@ function HeatmapScreen({ token, user }) {
           <span style={{ color: "#FF6B6B", fontSize: 11, fontFamily: "'EB Garamond', serif" }}>{mapMsg}</span>
         </div>
       )}
-      {dealTag && dealVenueIds && dealVenueIds.size === 0 && (
+      {dealTag && dealVenueIds && filtered.length === 0 && (
         <div style={{ position: "absolute", top: 120, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.92)", borderRadius: 20, padding: "6px 14px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.3)`, whiteSpace: "nowrap" }}>
-          <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>No {dealTag} deals in {currentCity.split(",")[0]} right now</span>
+          <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>No {dealTag} deals here right now</span>
         </div>
       )}
       {filtered.length > 0 && (
@@ -784,7 +792,7 @@ function HeatmapScreen({ token, user }) {
           <button onClick={() => setActiveFriend(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 14 }}>✕</button>
         </div>
       )}
-      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues(currentCity)} />}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues()} />}
       {showFriends && <FriendsScreen token={token} onClose={() => setShowFriends(false)} />}
     </div>
   );
