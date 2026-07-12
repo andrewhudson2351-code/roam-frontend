@@ -352,8 +352,10 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
   const actionBtn = { flex: 1, padding: "10px 6px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.25)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif", cursor: "pointer", textAlign: "center", textDecoration: "none" };
 
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 30, background: C.carbon, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <button onClick={onClose} style={{ position: "fixed", top: 14, left: 14, zIndex: 40, width: 34, height: 34, borderRadius: "50%", border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(14,15,11,0.85)", color: C.aureus, fontSize: 16, cursor: "pointer", backdropFilter: "blur(8px)" }}>←</button>
+    <div style={{ position: "absolute", inset: 0, zIndex: 30 }}>
+      {/* content scrolls in an inner div so the back button can anchor to the
+          non-scrolling overlay — position:fixed put it under the iOS status bar */}
+      <div style={{ position: "absolute", inset: 0, background: C.carbon, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
 
       {photos.length > 0 ? (
         <div style={{ position: "relative" }}>
@@ -506,9 +508,12 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
           </div>
         )}
       </div>
+      </div>
+
+      <button onClick={onClose} style={{ position: "absolute", top: 14, left: 14, zIndex: 40, width: 34, height: 34, borderRadius: "50%", border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(14,15,11,0.85)", color: C.aureus, fontSize: 16, cursor: "pointer", backdropFilter: "blur(8px)" }}>←</button>
 
       {msg && (
-        <div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 45, background: "rgba(42,13,13,0.95)", borderRadius: 20, padding: "6px 14px", border: `1px solid rgba(255,107,107,0.4)`, maxWidth: "85%", textAlign: "center" }}>
+        <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 45, background: "rgba(42,13,13,0.95)", borderRadius: 20, padding: "6px 14px", border: `1px solid rgba(255,107,107,0.4)`, maxWidth: "85%", textAlign: "center" }}>
           <span style={{ color: "#FF6B6B", fontSize: 11, fontFamily: "'EB Garamond', serif" }}>{msg}</span>
         </div>
       )}
