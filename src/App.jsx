@@ -69,7 +69,7 @@ async function apiFetch(path, options = {}, token = null) {
     const res = await fetch(`${API}${path}`, { ...options, headers });
     let data = null;
     try { data = await res.json(); } catch { /* non-JSON body, e.g. 502 HTML */ }
-    if (!res.ok) return { error: data?.error || `Request failed (${res.status})`, status: res.status };
+    if (!res.ok) return { ...(data || {}), error: data?.error || `Request failed (${res.status})`, status: res.status };
     return data;
   } catch {
     return { error: "Network error. Check your connection." };
@@ -1067,6 +1067,7 @@ function StoriesScreen({ token }) {
 function DealsScreen({ token }) {
   const [deals, setDeals] = useState([]);
   const [redeemed, setRedeemed] = useState({});
+  const [receipt, setReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dealMsg, setDealMsg] = useState(null);
   const [tagFilter, setTagFilter] = useState(null);
@@ -1076,16 +1077,34 @@ function DealsScreen({ token }) {
   }, []);
 
   useEffect(() => {
+    if (!token) return;
+    apiFetch("/api/deals/my-redemptions", {}, token).then(data => {
+      if (!Array.isArray(data)) return;
+      setRedeemed(r => {
+        const next = { ...r };
+        for (const row of data) next[row.deal_id] = { code: row.code, redeemed_at: row.redeemed_at };
+        return next;
+      });
+    });
+  }, [token]);
+
+  useEffect(() => {
     if (!dealMsg) return;
     const t = setTimeout(() => setDealMsg(null), 4000);
     return () => clearTimeout(t);
   }, [dealMsg]);
 
   async function redeem(deal) {
-    if (redeemed[deal.id]) return;
+    const existing = redeemed[deal.id];
+    if (existing) { setReceipt({ deal, ...existing }); return; }
     const data = await apiFetch(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
-    if (data.success) setRedeemed(r => ({ ...r, [deal.id]: true }));
-    else if (data.error) setDealMsg(data.error);
+    const info = data.redemption ? { code: data.redemption.code, redeemed_at: data.redemption.redeemed_at } : null;
+    if ((data.success || data.already_redeemed) && info) {
+      setRedeemed(r => ({ ...r, [deal.id]: info }));
+      setReceipt({ deal, ...info });
+    } else if (data.error) {
+      setDealMsg(data.error);
+    }
   }
 
   const visibleDeals = tagFilter ? deals.filter(d => d.tags?.includes(tagFilter)) : deals;
@@ -1132,14 +1151,33 @@ function DealsScreen({ token }) {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 10, color: C.marble, opacity: 0.3, fontFamily: "sans-serif" }}>💾 {d.save_count} saved</div>
-                <button onClick={() => redeem(d)} style={{ padding: "7px 18px", borderRadius: 12, border: "none", cursor: d.is_premium_only ? "not-allowed" : "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 11, letterSpacing: 0.5, background: isRedeemed ? "rgba(200,169,110,0.1)" : d.is_premium_only ? "rgba(200,169,110,0.1)" : `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: isRedeemed || d.is_premium_only ? C.aureus : C.carbon }}>
-                  {isRedeemed ? "✓ Redeemed" : d.is_premium_only ? "🔒 Premium" : "Redeem"}
+                <button onClick={() => redeem(d)} style={{ padding: "7px 18px", borderRadius: 12, border: isRedeemed ? `1px solid rgba(200,169,110,0.4)` : "none", cursor: d.is_premium_only && !isRedeemed ? "not-allowed" : "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 11, letterSpacing: 0.5, background: isRedeemed ? "rgba(200,169,110,0.1)" : d.is_premium_only ? "rgba(200,169,110,0.1)" : `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: isRedeemed || d.is_premium_only ? C.aureus : C.carbon }}>
+                  {isRedeemed ? "View Receipt" : d.is_premium_only ? "🔒 Premium" : "Redeem"}
                 </button>
               </div>
             </div>
           );
         })}
       </div>
+      {receipt && (
+        <div onClick={() => setReceipt(null)} style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)", padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 320, background: C.carbon, border: `1px solid rgba(200,169,110,0.4)`, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
+            <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 3, textTransform: "uppercase", marginBottom: 14 }}>✦ Deal Redeemed ✦</div>
+            <div style={{ fontSize: 12, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1, marginBottom: 4 }}>{receipt.deal.venues?.name}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>{receipt.deal.title}</div>
+            {receipt.deal.detail && <div style={{ fontSize: 12, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif", marginBottom: 14 }}>{receipt.deal.detail}</div>}
+            <div style={{ background: "rgba(200,169,110,0.08)", border: `1px dashed rgba(200,169,110,0.5)`, borderRadius: 14, padding: "14px 10px", margin: "0 0 12px" }}>
+              <div style={{ fontSize: 8, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6, opacity: 0.7 }}>Redemption Code</div>
+              <div data-testid="redemption-code" style={{ fontSize: 30, fontWeight: 700, color: C.ivory, fontFamily: "monospace", letterSpacing: 6 }}>{receipt.code}</div>
+            </div>
+            <div style={{ fontSize: 11, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif", marginBottom: 4 }}>
+              Redeemed {new Date(receipt.redeemed_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase", opacity: 0.7, marginBottom: 18 }}>Single use · Show this to your server</div>
+            <button onClick={() => setReceipt(null)} style={{ width: "100%", padding: "11px 0", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon }}>Done</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1169,6 +1207,7 @@ function DashboardScreen({ token, user }) {
   const [phoneLast4, setPhoneLast4] = useState(null);
   const [otpCode, setOtpCode] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [recentRedemptions, setRecentRedemptions] = useState([]);
 
   useEffect(() => { loadMyVenues(); }, []);
 
@@ -1181,8 +1220,12 @@ function DashboardScreen({ token, user }) {
 
   async function loadDash(venueId) {
     setLoading(true); setSelected(venueId);
-    const data = await apiFetch(`/api/dashboard/${venueId}`, {}, token);
+    const [data, redemptions] = await Promise.all([
+      apiFetch(`/api/dashboard/${venueId}`, {}, token),
+      apiFetch(`/api/dashboard/${venueId}/redemptions`, {}, token),
+    ]);
     if (data?.error) setDashMsg(data.error); else setDash(data);
+    setRecentRedemptions(Array.isArray(redemptions) ? redemptions : []);
     setLoading(false); setClaimView("dashboard");
   }
 
@@ -1570,6 +1613,21 @@ function DashboardScreen({ token, user }) {
                     {d.recur_days && <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.8, marginTop: 1 }}>↻ {recurLabel(d)}</div>}
                   </div>
                   <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif" }}>✦ {d.redemption_count}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {recentRedemptions.length > 0 && (
+            <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.1)` }}>
+              <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Recent Redemptions</div>
+              {recentRedemptions.slice(0, 10).map(r => (
+                <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid rgba(200,169,110,0.08)` }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{r.deals?.title || "Deal"}</div>
+                    <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", marginTop: 1 }}>{r.users?.username || "Roamer"} · {timeAgo(r.redeemed_at)}</div>
+                  </div>
+                  {r.code && <div style={{ fontSize: 11, color: C.aureus, fontFamily: "monospace", letterSpacing: 1.5 }}>{r.code}</div>}
                 </div>
               ))}
             </div>
