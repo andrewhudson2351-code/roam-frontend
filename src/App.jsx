@@ -1208,21 +1208,28 @@ function StoriesScreen({ token }) {
   );
 }
 
-function DealsScreen({ token }) {
+function DealsScreen({ token, city }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
 
   useEffect(() => {
-    apiFetch("/api/deals").then(data => { if (Array.isArray(data)) setDeals(data); setLoading(false); });
-  }, []);
+    let stale = false;
+    setLoading(true);
+    apiFetch(`/api/deals?city=${encodeURIComponent(city || "Charlotte")}`).then(data => {
+      if (stale) return;
+      if (Array.isArray(data)) setDeals(data);
+      setLoading(false);
+    });
+    return () => { stale = true; };
+  }, [city]);
 
   const visibleDeals = tagFilter ? deals.filter(d => d.tags?.includes(tagFilter)) : deals;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
-      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>Tonight's Deals · {visibleDeals.length} available</div>
+      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>Tonight's Deals · {city || "Charlotte"} · {visibleDeals.length} available</div>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
         {DEAL_TAGS.map(t => (
           <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
@@ -2192,7 +2199,7 @@ export default function RoamApp() {
             <>
               {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
-              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
+              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} />}
               {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
               {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
