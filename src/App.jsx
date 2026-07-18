@@ -165,15 +165,89 @@ const DEAL_TAG_GROUPS = {
 const DEAL_TAGS = Object.values(DEAL_TAG_GROUPS).flat();
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function fmtTime(t) {
+  const [h, m] = String(t).split(":").map(Number);
+  const ap = h >= 12 ? "pm" : "am";
+  const h12 = h % 12 || 12;
+  return m ? `${h12}:${String(m).padStart(2, "0")}${ap}` : `${h12}${ap}`;
+}
 function recurLabel(d) {
   const days = d.recur_days.length === 7 ? "Daily" : d.recur_days.map(i => DAY_LABELS[i]).join(", ");
-  const fmt = (t) => {
-    const [h, m] = t.split(":").map(Number);
-    const ap = h >= 12 ? "pm" : "am";
-    const h12 = h % 12 || 12;
-    return m ? `${h12}:${String(m).padStart(2, "0")}${ap}` : `${h12}${ap}`;
-  };
-  return `${days} · ${fmt(d.recur_start)}–${fmt(d.recur_end)}`;
+  return `${days} · ${fmtTime(d.recur_start)}–${fmtTime(d.recur_end)}`;
+}
+
+const EVENT_TAG_GROUPS = { ...DEAL_TAG_GROUPS, Events: ["Tasting", "Comedy", "DJ Set", "Theme Night"] };
+
+function eventDateLabel(dateStr) {
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function eventScheduleLabel(e) {
+  if (e.event_date) return `${eventDateLabel(e.event_date)} · ${fmtTime(e.start_time)}–${fmtTime(e.end_time)}`;
+  const days = e.recur_days.length === 7 ? "Daily" : `Every ${e.recur_days.map(i => DAY_LABELS[i]).join(", ")}`;
+  const until = e.recur_until ? ` · until ${eventDateLabel(e.recur_until)}` : "";
+  return `${days} · ${fmtTime(e.recur_start)}–${fmtTime(e.recur_end)}${until}`;
+}
+
+function useRedemptions(token) {
+  const [redeemed, setRedeemed] = useState({});
+  const [receipt, setReceipt] = useState(null);
+  const [redeemError, setRedeemError] = useState(null);
+
+  useEffect(() => {
+    if (!token) return;
+    apiFetch("/api/deals/my-redemptions", {}, token).then(data => {
+      if (!Array.isArray(data)) return;
+      setRedeemed(r => {
+        const next = { ...r };
+        for (const row of data) next[row.deal_id] = { code: row.code, redeemed_at: row.redeemed_at };
+        return next;
+      });
+    });
+  }, [token]);
+
+  useEffect(() => {
+    if (!redeemError) return;
+    const t = setTimeout(() => setRedeemError(null), 4000);
+    return () => clearTimeout(t);
+  }, [redeemError]);
+
+  async function redeem(deal) {
+    const existing = redeemed[deal.id];
+    if (existing) { setReceipt({ deal, ...existing }); return; }
+    const data = await apiFetch(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
+    const info = data.redemption ? { code: data.redemption.code, redeemed_at: data.redemption.redeemed_at } : null;
+    if ((data.success || data.already_redeemed) && info) {
+      setRedeemed(r => ({ ...r, [deal.id]: info }));
+      setReceipt({ deal, ...info });
+    } else if (data.error) {
+      setRedeemError(data.error);
+    }
+  }
+
+  return { redeemed, receipt, setReceipt, redeem, redeemError };
+}
+
+function ReceiptModal({ receipt, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)", padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 320, background: C.carbon, border: `1px solid rgba(200,169,110,0.4)`, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
+        <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 3, textTransform: "uppercase", marginBottom: 14 }}>✦ Deal Redeemed ✦</div>
+        <div style={{ fontSize: 12, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1, marginBottom: 4 }}>{receipt.deal.venues?.name}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>{receipt.deal.title}</div>
+        {receipt.deal.detail && <div style={{ fontSize: 12, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif", marginBottom: 14 }}>{receipt.deal.detail}</div>}
+        <div style={{ background: "rgba(200,169,110,0.08)", border: `1px dashed rgba(200,169,110,0.5)`, borderRadius: 14, padding: "14px 10px", margin: "0 0 12px" }}>
+          <div style={{ fontSize: 8, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6, opacity: 0.7 }}>Redemption Code</div>
+          <div data-testid="redemption-code" style={{ fontSize: 30, fontWeight: 700, color: C.ivory, fontFamily: "monospace", letterSpacing: 6 }}>{receipt.code}</div>
+        </div>
+        <div style={{ fontSize: 11, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif", marginBottom: 4 }}>
+          Redeemed {new Date(receipt.redeemed_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+        </div>
+        <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase", opacity: 0.7, marginBottom: 18 }}>Single use · Show this to your server</div>
+        <button onClick={onClose} style={{ width: "100%", padding: "11px 0", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon }}>Done</button>
+      </div>
+    </div>
+  );
 }
 
 function AuthScreen({ onAuth }) {
@@ -348,6 +422,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
   const hasTypical = typical?.hour_data?.some(h => (h || 0) > 0);
   const friendsHere = data?.friends_here || [];
   const deals = data?.deals || [];
+  const events = data?.events || [];
   const sectionLabel = { fontSize: 9, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", letterSpacing: 1.5, marginBottom: 8 };
   const actionBtn = { flex: 1, padding: "10px 6px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.25)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif", cursor: "pointer", textAlign: "center", textDecoration: "none" };
 
@@ -480,6 +555,41 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
                       ))}
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {events.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={sectionLabel}>EVENTS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {events.map(e => (
+                <div key={e.id} style={{ background: "rgba(200,169,110,0.05)", borderRadius: 14, border: `1px solid rgba(200,169,110,0.18)`, overflow: "hidden" }}>
+                  {e.cover_image_url && (
+                    <img src={e.cover_image_url} alt="" loading="lazy" onError={ev => { ev.currentTarget.style.display = "none"; }} style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} />
+                  )}
+                  <div style={{ padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{e.title}</span>
+                      {e.is_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>HAPPENING NOW</span>}
+                    </div>
+                    {e.description && <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>{e.description}</div>}
+                    <div style={{ fontSize: 10, color: C.aureus, marginTop: 4, fontFamily: "'EB Garamond', serif" }}>{e.recur_days ? "↻ " : ""}{eventScheduleLabel(e)}</div>
+                    {e.tags?.length > 0 && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                        {e.tags.map(t => (
+                          <span key={t} style={{ fontSize: 9, color: C.aureus, background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 8, padding: "2px 7px", fontFamily: "sans-serif", letterSpacing: 0.5 }}>{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    {e.deals?.length > 0 && (
+                      <div style={{ fontSize: 10, color: C.aureus, marginTop: 6, fontFamily: "'EB Garamond', serif", opacity: 0.85 }}>
+                        ✦ {e.deals.map(d => d.title).join(" · ")}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1070,46 +1180,13 @@ function StoriesScreen({ token }) {
 
 function DealsScreen({ token }) {
   const [deals, setDeals] = useState([]);
-  const [redeemed, setRedeemed] = useState({});
-  const [receipt, setReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [dealMsg, setDealMsg] = useState(null);
   const [tagFilter, setTagFilter] = useState(null);
+  const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
 
   useEffect(() => {
     apiFetch("/api/deals").then(data => { if (Array.isArray(data)) setDeals(data); setLoading(false); });
   }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    apiFetch("/api/deals/my-redemptions", {}, token).then(data => {
-      if (!Array.isArray(data)) return;
-      setRedeemed(r => {
-        const next = { ...r };
-        for (const row of data) next[row.deal_id] = { code: row.code, redeemed_at: row.redeemed_at };
-        return next;
-      });
-    });
-  }, [token]);
-
-  useEffect(() => {
-    if (!dealMsg) return;
-    const t = setTimeout(() => setDealMsg(null), 4000);
-    return () => clearTimeout(t);
-  }, [dealMsg]);
-
-  async function redeem(deal) {
-    const existing = redeemed[deal.id];
-    if (existing) { setReceipt({ deal, ...existing }); return; }
-    const data = await apiFetch(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
-    const info = data.redemption ? { code: data.redemption.code, redeemed_at: data.redemption.redeemed_at } : null;
-    if ((data.success || data.already_redeemed) && info) {
-      setRedeemed(r => ({ ...r, [deal.id]: info }));
-      setReceipt({ deal, ...info });
-    } else if (data.error) {
-      setDealMsg(data.error);
-    }
-  }
 
   const visibleDeals = tagFilter ? deals.filter(d => d.tags?.includes(tagFilter)) : deals;
 
@@ -1121,8 +1198,8 @@ function DealsScreen({ token }) {
           <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
         ))}
       </div>
-      {dealMsg && (
-        <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{dealMsg}</div>
+      {redeemError && (
+        <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{redeemError}</div>
       )}
       {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading deals...</div>}
       {!loading && visibleDeals.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>{tagFilter ? `No ${tagFilter} deals tonight — try another tag.` : "No deals tonight — check back later!"}</div>}
@@ -1163,25 +1240,95 @@ function DealsScreen({ token }) {
           );
         })}
       </div>
-      {receipt && (
-        <div onClick={() => setReceipt(null)} style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)", padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 320, background: C.carbon, border: `1px solid rgba(200,169,110,0.4)`, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
-            <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 3, textTransform: "uppercase", marginBottom: 14 }}>✦ Deal Redeemed ✦</div>
-            <div style={{ fontSize: 12, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1, marginBottom: 4 }}>{receipt.deal.venues?.name}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>{receipt.deal.title}</div>
-            {receipt.deal.detail && <div style={{ fontSize: 12, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif", marginBottom: 14 }}>{receipt.deal.detail}</div>}
-            <div style={{ background: "rgba(200,169,110,0.08)", border: `1px dashed rgba(200,169,110,0.5)`, borderRadius: 14, padding: "14px 10px", margin: "0 0 12px" }}>
-              <div style={{ fontSize: 8, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6, opacity: 0.7 }}>Redemption Code</div>
-              <div data-testid="redemption-code" style={{ fontSize: 30, fontWeight: 700, color: C.ivory, fontFamily: "monospace", letterSpacing: 6 }}>{receipt.code}</div>
-            </div>
-            <div style={{ fontSize: 11, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif", marginBottom: 4 }}>
-              Redeemed {new Date(receipt.redeemed_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-            </div>
-            <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase", opacity: 0.7, marginBottom: 18 }}>Single use · Show this to your server</div>
-            <button onClick={() => setReceipt(null)} style={{ width: "100%", padding: "11px 0", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 13, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon }}>Done</button>
-          </div>
-        </div>
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
+    </div>
+  );
+}
+
+function EventsScreen({ token }) {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dayFilter, setDayFilter] = useState(null);
+  const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
+
+  useEffect(() => {
+    apiFetch("/api/events").then(data => { if (Array.isArray(data)) setEvents(data); setLoading(false); });
+  }, []);
+
+  const days = useMemo(() => {
+    const out = [];
+    const d = new Date();
+    for (let i = 0; i < 7; i++) {
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      out.push({ dateStr, label: i === 0 ? "Today" : `${DAY_LABELS[d.getDay()]} ${d.getDate()}` });
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }, []);
+
+  const visible = dayFilter ? events.filter(e => e.occurrences?.includes(dayFilter)) : events;
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
+      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>What's On · {visible.length} {visible.length === 1 ? "event" : "events"}</div>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+        <button onClick={() => setDayFilter(null)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === null ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === null ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === null ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>All</button>
+        {days.map(d => (
+          <button key={d.dateStr} onClick={() => setDayFilter(f => f === d.dateStr ? null : d.dateStr)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === d.dateStr ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === d.dateStr ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === d.dateStr ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d.label}</button>
+        ))}
+      </div>
+      {redeemError && (
+        <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{redeemError}</div>
       )}
+      {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading events...</div>}
+      {!loading && visible.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>{dayFilter ? "Nothing on that day — try another." : "No upcoming events — check back soon!"}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {visible.map(e => (
+          <div key={e.id} style={{ background: "rgba(200,169,110,0.05)", borderRadius: 18, border: `1px solid rgba(200,169,110,0.18)`, overflow: "hidden" }}>
+            {e.cover_image_url && (
+              <img src={e.cover_image_url} alt="" loading="lazy" onError={ev => { ev.currentTarget.style.display = "none"; }} style={{ width: "100%", height: 130, objectFit: "cover", display: "block" }} />
+            )}
+            <div style={{ padding: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.aureus, boxShadow: `0 0 6px ${C.aureus}` }} />
+                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{e.venues?.name}</span>
+                {e.is_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>HAPPENING NOW</span>}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{e.title}</div>
+              <div style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", marginTop: 3 }}>{e.recur_days ? "↻ " : ""}{eventScheduleLabel(e)}</div>
+              {e.description && <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", marginTop: 3, opacity: 0.6 }}>{e.description}</div>}
+              {e.tags?.length > 0 && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                  {e.tags.map(t => (
+                    <span key={t} style={{ fontSize: 9, color: C.aureus, background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 8, padding: "2px 7px", fontFamily: "sans-serif", letterSpacing: 0.5 }}>{t}</span>
+                  ))}
+                </div>
+              )}
+              {e.deals?.length > 0 && (
+                <div style={{ marginTop: 10, borderTop: `1px solid rgba(200,169,110,0.12)`, paddingTop: 8 }}>
+                  <div style={{ fontSize: 8, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>✦ Deals at this event</div>
+                  {e.deals.map(d => {
+                    const dealForModal = { ...d, venues: { name: e.venues?.name, city: e.venues?.city } };
+                    const isRedeemed = redeemed[d.id];
+                    return (
+                      <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{d.title}</div>
+                          {d.detail && <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>{d.detail}</div>}
+                        </div>
+                        <button onClick={() => redeem(dealForModal)} style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 10, border: isRedeemed ? `1px solid rgba(200,169,110,0.4)` : "none", cursor: d.is_premium_only && !isRedeemed ? "not-allowed" : "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 10, letterSpacing: 0.5, background: isRedeemed ? "rgba(200,169,110,0.1)" : d.is_premium_only ? "rgba(200,169,110,0.1)" : `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: isRedeemed || d.is_premium_only ? C.aureus : C.carbon }}>
+                          {isRedeemed ? "View Receipt" : d.is_premium_only ? "🔒 Premium" : "Redeem"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }
@@ -1193,6 +1340,14 @@ function DashboardScreen({ token, user }) {
   const [newDeal, setNewDeal] = useState({ title: "", detail: "", expires_at: "", tags: [] });
   const [dealMode, setDealMode] = useState("once");
   const [recur, setRecur] = useState({ days: [], start: "", end: "" });
+  const [newEvent, setNewEvent] = useState({ title: "", description: "", cover_image_url: "", tags: [] });
+  const [eventMode, setEventMode] = useState("once");
+  const [eventOnce, setEventOnce] = useState({ date: "", start: "", end: "" });
+  const [eventRecur, setEventRecur] = useState({ days: [], start: "", end: "", until: "" });
+  const [eventOngoing, setEventOngoing] = useState(true);
+  const [linkedDealIds, setLinkedDealIds] = useState([]);
+  const [postingEvent, setPostingEvent] = useState(false);
+  const [eventMsg, setEventMsg] = useState(null);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -1306,6 +1461,48 @@ function DashboardScreen({ token, user }) {
       if (d.tags.length >= 3) return d;
       return { ...d, tags: [...d.tags, tag] };
     });
+  }
+
+  function toggleEventTag(tag) {
+    setNewEvent(ev => {
+      if (ev.tags.includes(tag)) return { ...ev, tags: ev.tags.filter(t => t !== tag) };
+      if (ev.tags.length >= 3) return ev;
+      return { ...ev, tags: [...ev.tags, tag] };
+    });
+  }
+
+  function toggleLinkedDeal(id) {
+    setLinkedDealIds(ids => {
+      if (ids.includes(id)) return ids.filter(x => x !== id);
+      if (ids.length >= 10) return ids;
+      return [...ids, id];
+    });
+  }
+
+  async function postEvent() {
+    if (!newEvent.title) return setDashMsg("Event title is required.");
+    if (newEvent.tags.length < 1) return setDashMsg("Pick 1 to 3 tags so people can find your event.");
+    let payload = { venue_id: selected, title: newEvent.title, description: newEvent.description, cover_image_url: newEvent.cover_image_url || null, tags: newEvent.tags, linked_deal_ids: linkedDealIds };
+    if (eventMode === "once") {
+      if (!eventOnce.date || !eventOnce.start || !eventOnce.end) return setDashMsg("Pick a date and time window for your event.");
+      payload = { ...payload, event_date: eventOnce.date, start_time: eventOnce.start, end_time: eventOnce.end };
+    } else {
+      if (eventRecur.days.length < 1 || !eventRecur.start || !eventRecur.end) return setDashMsg("Pick day(s) and a time window for your event.");
+      payload = { ...payload, recur_days: eventRecur.days, recur_start: eventRecur.start, recur_end: eventRecur.end, recur_until: eventOngoing ? null : (eventRecur.until || null) };
+    }
+    setPostingEvent(true);
+    const result = await apiFetch("/api/events", { method: "POST", body: JSON.stringify(payload) }, token);
+    setPostingEvent(false);
+    if (result?.error) return setDashMsg(result.error);
+    setDashMsg(null);
+    setEventMsg(`"${result.title}" is live ✦`);
+    setNewEvent({ title: "", description: "", cover_image_url: "", tags: [] });
+    setEventOnce({ date: "", start: "", end: "" });
+    setEventRecur({ days: [], start: "", end: "", until: "" });
+    setEventOngoing(true);
+    setLinkedDealIds([]);
+    setEventMode("once");
+    setTimeout(() => setEventMsg(null), 4000);
   }
 
   async function toggleBoost(enable) {
@@ -1607,6 +1804,90 @@ function DashboardScreen({ token, user }) {
             </div>
           </div>
 
+          <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+            <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Post an Event</div>
+            {eventMsg && (
+              <div style={{ background: "rgba(46,204,113,0.08)", border: `1px solid rgba(46,204,113,0.3)`, borderRadius: 10, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: C.buzzing, fontFamily: "'EB Garamond', serif" }}>{eventMsg}</div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input value={newEvent.title} onChange={e => setNewEvent(ev => ({ ...ev, title: e.target.value }))} placeholder="e.g. Blind Tasting Tuesdays" style={inputStyle} />
+              <input value={newEvent.description} onChange={e => setNewEvent(ev => ({ ...ev, description: e.target.value }))} placeholder="Description (e.g. Guess the pour, win a glass)" style={inputStyle} />
+              <input value={newEvent.cover_image_url} onChange={e => setNewEvent(ev => ({ ...ev, cover_image_url: e.target.value }))} type="url" placeholder="Cover image URL (optional)" style={inputStyle} />
+              <div>
+                <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>Tags · pick 1–3 ({newEvent.tags.length}/3)</div>
+                {Object.entries(EVENT_TAG_GROUPS).map(([group, tags]) => (
+                  <div key={group} style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 8, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>{group}</div>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {tags.map(t => {
+                        const on = newEvent.tags.includes(t);
+                        const full = !on && newEvent.tags.length >= 3;
+                        return (
+                          <button key={t} onClick={() => toggleEventTag(t)} style={{ padding: "4px 10px", borderRadius: 14, cursor: full ? "not-allowed" : "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${on ? C.aureus : "rgba(200,169,110,0.2)"}`, background: on ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: on ? C.carbon : C.aureus, opacity: full ? 0.35 : 1 }}>{t}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", background: "rgba(200,169,110,0.05)", borderRadius: 10, border: `1px solid rgba(200,169,110,0.15)`, padding: 2 }}>
+                {[["once", "One-time"], ["weekly", "Weekly"]].map(([m, label]) => (
+                  <button key={m} onClick={() => setEventMode(m)} style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "sans-serif", letterSpacing: 0.5, background: eventMode === m ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", color: eventMode === m ? C.carbon : C.aureus }}>{label}</button>
+                ))}
+              </div>
+              {eventMode === "once" && (
+                <>
+                  <input value={eventOnce.date} onChange={e => setEventOnce(o => ({ ...o, date: e.target.value }))} type="date" style={inputStyle} />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input value={eventOnce.start} onChange={e => setEventOnce(o => ({ ...o, start: e.target.value }))} type="time" style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>to</span>
+                    <input value={eventOnce.end} onChange={e => setEventOnce(o => ({ ...o, end: e.target.value }))} type="time" style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                </>
+              )}
+              {eventMode === "weekly" && (
+                <>
+                  <div style={{ display: "flex", gap: 4, justifyContent: "space-between" }}>
+                    {DAY_LABELS.map((label, i) => {
+                      const on = eventRecur.days.includes(i);
+                      return (
+                        <button key={label} onClick={() => setEventRecur(r => ({ ...r, days: on ? r.days.filter(d => d !== i) : [...r.days, i].sort() }))}
+                          style={{ flex: 1, padding: "6px 0", borderRadius: 8, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, border: `1px solid ${on ? C.aureus : "rgba(200,169,110,0.2)"}`, background: on ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: on ? C.carbon : C.aureus }}>{label[0]}</button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input value={eventRecur.start} onChange={e => setEventRecur(r => ({ ...r, start: e.target.value }))} type="time" style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>to</span>
+                    <input value={eventRecur.end} onChange={e => setEventRecur(r => ({ ...r, end: e.target.value }))} type="time" style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                  <div style={{ display: "flex", background: "rgba(200,169,110,0.05)", borderRadius: 10, border: `1px solid rgba(200,169,110,0.15)`, padding: 2 }}>
+                    {[[true, "Ongoing"], [false, "Ends on a date"]].map(([v, label]) => (
+                      <button key={label} onClick={() => setEventOngoing(v)} style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, fontFamily: "sans-serif", letterSpacing: 0.5, background: eventOngoing === v ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", color: eventOngoing === v ? C.carbon : C.aureus }}>{label}</button>
+                    ))}
+                  </div>
+                  {!eventOngoing && (
+                    <input value={eventRecur.until} onChange={e => setEventRecur(r => ({ ...r, until: e.target.value }))} type="date" style={inputStyle} />
+                  )}
+                </>
+              )}
+              {dash.active_deals?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>Attach deals ({linkedDealIds.length})</div>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {dash.active_deals.map(d => {
+                      const on = linkedDealIds.includes(d.id);
+                      return (
+                        <button key={d.id} onClick={() => toggleLinkedDeal(d.id)} style={{ padding: "4px 10px", borderRadius: 14, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${on ? C.aureus : "rgba(200,169,110,0.2)"}`, background: on ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: on ? C.carbon : C.aureus }}>{on ? "✓ " : ""}{d.title}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <button onClick={postEvent} disabled={postingEvent} style={{ padding: "10px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>{postingEvent ? "Posting..." : "Post Event 🎭"}</button>
+            </div>
+          </div>
+
           {dash.active_deals?.length > 0 && (
             <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.1)` }}>
               <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Active Deals</div>
@@ -1826,6 +2107,7 @@ export default function RoamApp() {
     { id: "map",       icon: "🗺️", label: "Map" },
     { id: "stories",   icon: "📸", label: "Stories" },
     { id: "deals",     icon: "✦",  label: "Deals" },
+    { id: "events",    icon: "🎭", label: "Events" },
     { id: "dashboard", icon: "⊙",  label: "Business" },
     { id: "settings",  icon: "⚙️", label: "Settings" },
   ];
@@ -1873,6 +2155,7 @@ export default function RoamApp() {
               {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
+              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
               {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
             </>
