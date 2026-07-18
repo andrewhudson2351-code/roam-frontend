@@ -631,12 +631,11 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
   );
 }
 
-function HeatmapScreen({ token, user }) {
+function HeatmapScreen({ token, user, currentCity, setCurrentCity }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
   const [detailVenue, setDetailVenue] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentCity, setCurrentCity] = useState("Charlotte");
   const [mode, setMode] = useState("visitor");
   const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
@@ -646,6 +645,7 @@ function HeatmapScreen({ token, user }) {
   const [mapMsg, setMapMsg] = useState(null);
   const [dealTag, setDealTag] = useState(null);
   const [dealVenueIds, setDealVenueIds] = useState(null);
+  const [liveEventVenues, setLiveEventVenues] = useState([]);
   const mapRef = useRef(null);
   const loadSeqRef = useRef(0);
   const moveDebounceRef = useRef(null);
@@ -699,6 +699,27 @@ function HeatmapScreen({ token, user }) {
     });
     return () => { stale = true; };
   }, [dealTag]);
+
+  // venues with an event happening right now get a pulsing map badge
+  useEffect(() => {
+    let stale = false;
+    function loadLive() {
+      apiFetch(`/api/events?city=${encodeURIComponent(currentCity)}`).then(data => {
+        if (stale || !Array.isArray(data)) return;
+        const byVenue = new Map();
+        for (const e of data) {
+          if (!e.is_now || !e.venues || isNaN(parseFloat(e.venues.latitude))) continue;
+          const cur = byVenue.get(e.venues.id);
+          if (cur) cur.count++;
+          else byVenue.set(e.venues.id, { venue: e.venues, count: 1 });
+        }
+        setLiveEventVenues([...byVenue.values()]);
+      });
+    }
+    loadLive();
+    const t = setInterval(loadLive, 5 * 60 * 1000);
+    return () => { stale = true; clearInterval(t); };
+  }, [currentCity]);
 
   function handleMoveEnd(evt) {
     const { latitude, longitude } = evt.viewState;
@@ -832,7 +853,7 @@ function HeatmapScreen({ token, user }) {
         <MapboxMap
           ref={mapRef}
           mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-          initialViewState={{ latitude: 35.2271, longitude: -80.8431, zoom: 14 }}
+          initialViewState={{ latitude: cityCenter?.lat ?? 35.2271, longitude: cityCenter?.lng ?? -80.8431, zoom: 14 }}
           mapStyle="mapbox://styles/mapbox/dark-v11"
           style={{ position: "absolute", inset: 0 }}
           onLoad={() => loadVenues()}
@@ -845,6 +866,15 @@ function HeatmapScreen({ token, user }) {
             <Layer {...HEATMAP_LAYER} layout={{ visibility: dealTag ? "none" : "visible" }} />
             <Layer {...(dealTag ? DEAL_CIRCLE_LAYER : CIRCLE_LAYER)} />
           </Source>
+          {liveEventVenues.map(le => (
+            <Marker key={`live-${le.venue.id}`} latitude={parseFloat(le.venue.latitude)} longitude={parseFloat(le.venue.longitude)} anchor="bottom" offset={[0, -12]}>
+              <div onClick={e => { e.stopPropagation(); setDetailVenue(venues.find(v => v.id === le.venue.id) || le.venue); }}
+                style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, background: "rgba(14,15,11,0.92)", border: `1px solid ${C.buzzing}`, borderRadius: 12, padding: "3px 8px", boxShadow: pulse ? `0 0 14px rgba(80,220,140,0.6)` : `0 0 4px rgba(80,220,140,0.25)`, transition: "box-shadow 0.6s" }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.buzzing, boxShadow: `0 0 6px ${C.buzzing}`, opacity: pulse ? 1 : 0.35, transition: "opacity 0.6s" }} />
+                <span style={{ fontSize: 8, fontWeight: 700, color: C.buzzing, fontFamily: "sans-serif", letterSpacing: 1, whiteSpace: "nowrap" }}>EVENT NOW{le.count > 1 ? ` · ${le.count}` : ""}</span>
+              </div>
+            </Marker>
+          ))}
           {friendPins.map(f => (
             <Marker key={f.friendship_id} latitude={parseFloat(f.location.latitude)} longitude={parseFloat(f.location.longitude)} anchor="center">
               <div onClick={e => { e.stopPropagation(); setActiveFriend(f); }}
@@ -1245,15 +1275,22 @@ function DealsScreen({ token }) {
   );
 }
 
-function EventsScreen({ token }) {
+function EventsScreen({ token, city }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dayFilter, setDayFilter] = useState(null);
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
 
   useEffect(() => {
-    apiFetch("/api/events").then(data => { if (Array.isArray(data)) setEvents(data); setLoading(false); });
-  }, []);
+    let stale = false;
+    setLoading(true);
+    apiFetch(`/api/events?city=${encodeURIComponent(city || "Charlotte")}`).then(data => {
+      if (stale) return;
+      if (Array.isArray(data)) setEvents(data);
+      setLoading(false);
+    });
+    return () => { stale = true; };
+  }, [city]);
 
   const days = useMemo(() => {
     const out = [];
@@ -1270,7 +1307,7 @@ function EventsScreen({ token }) {
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
-      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>What's On · {visible.length} {visible.length === 1 ? "event" : "events"}</div>
+      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>What's On · {city || "Charlotte"} · {visible.length} {visible.length === 1 ? "event" : "events"}</div>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
         <button onClick={() => setDayFilter(null)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === null ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === null ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === null ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>All</button>
         {days.map(d => (
@@ -2102,6 +2139,7 @@ export default function RoamApp() {
 
   const currentUser = user || savedUser;
   const currentToken = token || savedToken;
+  const [currentCity, setCurrentCity] = useState("Charlotte");
 
   const tabs = [
     { id: "map",       icon: "🗺️", label: "Map" },
@@ -2152,10 +2190,10 @@ export default function RoamApp() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {!currentUser ? <AuthScreen onAuth={handleAuth} /> : (
             <>
-              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} />}
+              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} />}
-              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} />}
+              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
               {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
             </>
