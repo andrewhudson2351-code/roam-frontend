@@ -686,7 +686,8 @@ function HeatmapScreen({ token, user }) {
           );
         })}
       </div>
-      <div style={{ position: "absolute", top: 84, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
+      {/* right: 88 keeps the scrolling chips from sliding under the 👥 Friends pill */}
+      <div style={{ position: "absolute", top: 84, left: 0, right: 88, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
         {DEAL_TAGS.map(t => {
           const active = dealTag === t;
           return (
@@ -716,11 +717,6 @@ function HeatmapScreen({ token, user }) {
           style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
           <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>👥 Friends</span>
         </button>
-      </div>
-      <div style={{ position: "absolute", bottom: 70, left: 0, right: 0, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
-        {CITIES.map(c => (
-          <button key={c.name} onClick={() => goToCity(c.name)} style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 12, border: `1px solid ${currentCity === c.name ? C.aureus : "rgba(200,169,110,0.15)"}`, cursor: "pointer", background: currentCity === c.name ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: currentCity === c.name ? C.carbon : C.marble, fontSize: 9, fontFamily: "'EB Garamond', serif", backdropFilter: "blur(8px)" }}>{c.name.split(",")[0]}</button>
-        ))}
       </div>
       <div style={{ flex: 1, position: "relative" }}>
         <MapboxMap
@@ -766,8 +762,15 @@ function HeatmapScreen({ token, user }) {
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>No {dealTag} deals here right now</span>
         </div>
       )}
+      {/* City chips and venue cards stack in one column so taller cards (POPULAR/LOCAL FAVORITE badge) can't slide under the chips */}
+      <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
+        {CITIES.map(c => (
+          <button key={c.name} onClick={() => goToCity(c.name)} style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 12, border: `1px solid ${currentCity === c.name ? C.aureus : "rgba(200,169,110,0.15)"}`, cursor: "pointer", background: currentCity === c.name ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: currentCity === c.name ? C.carbon : C.marble, fontSize: 9, fontFamily: "'EB Garamond', serif", backdropFilter: "blur(8px)" }}>{c.name.split(",")[0]}</button>
+        ))}
+      </div>
       {filtered.length > 0 && (
-        <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
+        <div style={{ display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {filtered.slice(0, 8).map(v => (
             <div key={v.id} onClick={() => setDetailVenue(v)}
               style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
@@ -783,6 +786,7 @@ function HeatmapScreen({ token, user }) {
           ))}
         </div>
       )}
+      </div>
       {activeFriend && (
         <div style={{ position: "absolute", top: 90, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.94)", borderRadius: 14, padding: "10px 16px", border: `1px solid rgba(200,169,110,0.3)`, backdropFilter: "blur(8px)", display: "flex", alignItems: "center", gap: 10 }}>
           <div>
