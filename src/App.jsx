@@ -643,9 +643,9 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
           </div>
         )}
 
-        {data && data.is_claimed === false && (
+        {onClaim && data && data.is_claimed === false && (
           <div style={{ marginTop: 24 }}>
-            <button onClick={() => onClaim?.(v)} style={{ width: "100%", padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, letterSpacing: 0.5 }}>
+            <button onClick={() => onClaim(v)} style={{ width: "100%", padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, letterSpacing: 0.5 }}>
               Own this venue? Claim it
             </button>
             <div style={{ fontSize: 10, color: C.marble, opacity: 0.4, marginTop: 6, textAlign: "center", fontFamily: "'EB Garamond', serif" }}>Free — verify by phone in about two minutes</div>
@@ -712,12 +712,30 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   }
 
   // Own position: watching GPS is what triggers the OS location-permission
-  // prompt; the self pin renders only while Share My Location is on.
+  // prompt; the self pin renders only while Share My Location is on. Each fix
+  // also (a) centers the map on the user the first time, and (b) pushes the
+  // live location to the backend (throttled) so friends can see it.
   const [selfPos, setSelfPos] = useState(null);
+  const lastPushRef = useRef(0);
+  const centeredRef = useRef(false);
+  function centerOnSelf(pos) {
+    if (centeredRef.current || !mapRef.current) return;
+    centeredRef.current = true;
+    mapRef.current.flyTo({ center: [pos.lng, pos.lat], zoom: 14 });
+  }
   useEffect(() => {
     if (!user?.location_sharing || !navigator.geolocation) { setSelfPos(null); return; }
     const id = navigator.geolocation.watchPosition(
-      p => setSelfPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      p => {
+        const pos = { lat: p.coords.latitude, lng: p.coords.longitude };
+        setSelfPos(pos);
+        centerOnSelf(pos);
+        const now = Date.now();
+        if (now - lastPushRef.current > 60000) {
+          lastPushRef.current = now;
+          apiFetch("/api/friends/location", { method: "PATCH", body: JSON.stringify({ latitude: pos.lat, longitude: pos.lng, last_seen: new Date().toISOString() }) }, token).catch(() => {});
+        }
+      },
       () => setMapMsg("Couldn't access your location — check Roaman's location permission in device settings."),
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
     );
@@ -903,7 +921,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
           initialViewState={{ latitude: cityCenter?.lat ?? 35.2271, longitude: cityCenter?.lng ?? -80.8431, zoom: 14 }}
           mapStyle="mapbox://styles/mapbox/dark-v11"
           style={{ position: "absolute", inset: 0 }}
-          onLoad={() => loadVenues()}
+          onLoad={() => { loadVenues(); if (selfPos) centerOnSelf(selfPos); }}
           onMoveEnd={handleMoveEnd}
           onClick={handleMapClick}
           interactiveLayerIds={["venue-points"]}
@@ -987,7 +1005,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
         <div style={{ position: "absolute", top: 90, left: "50%", transform: "translateX(-50%)", zIndex: 15, background: "rgba(14,15,11,0.94)", borderRadius: 14, padding: "10px 16px", border: `1px solid rgba(200,169,110,0.3)`, backdropFilter: "blur(8px)", display: "flex", alignItems: "center", gap: 10 }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{activeFriend.friend?.display_name || activeFriend.friend?.username}</div>
-            <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>📍 at {activeFriend.location?.venues?.name || "a venue"}</div>
+            <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>📍 {activeFriend.location?.venues?.name ? `at ${activeFriend.location.venues.name}` : "sharing their location"}</div>
           </div>
           <button onClick={() => setActiveFriend(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 14 }}>✕</button>
         </div>
@@ -1112,9 +1130,11 @@ function FriendsScreen({ token, onClose }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{f.friend?.display_name || f.friend?.username}</div>
                     <div style={{ fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}>@{f.friend?.username}</div>
-                    {f.location?.venues?.name && (
+                    {f.location?.venues?.name ? (
                       <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif", marginTop: 2 }}>📍 at {f.location.venues.name}</div>
-                    )}
+                    ) : f.location ? (
+                      <div style={{ fontSize: 10, color: C.aureus, opacity: 0.8, fontFamily: "'EB Garamond', serif", marginTop: 2 }}>📍 out now</div>
+                    ) : null}
                   </div>
                   {confirmRemove === f.friendship_id ? (
                     <button onClick={() => remove(f.friendship_id)} style={{ padding: "6px 10px", borderRadius: 12, border: `1px solid rgba(255,45,45,0.4)`, background: "rgba(255,45,45,0.08)", color: "#FF2D2D", fontSize: 10, cursor: "pointer", fontFamily: "sans-serif", fontWeight: 700 }}>Confirm?</button>
@@ -1334,11 +1354,44 @@ function StoriesScreen({ token }) {
   );
 }
 
-function DealsScreen({ token, city }) {
+// Yelp-style mini map of a set of venues; tapping a pin calls onSelect(venue).
+function VenueMiniMap({ venues, onSelect }) {
+  const pts = useMemo(() => {
+    const seen = new Set();
+    return (venues || []).filter(v => {
+      if (!v || seen.has(v.id) || isNaN(parseFloat(v.latitude)) || isNaN(parseFloat(v.longitude))) return false;
+      seen.add(v.id); return true;
+    });
+  }, [venues]);
+  const center = pts.length
+    ? { lat: parseFloat(pts[0].latitude), lng: parseFloat(pts[0].longitude) }
+    : { lat: 35.2271, lng: -80.8431 };
+  return (
+    <div style={{ flex: 1, position: "relative", borderRadius: 16, overflow: "hidden", border: `1px solid rgba(200,169,110,0.18)` }}>
+      <MapboxMap mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+        initialViewState={{ latitude: center.lat, longitude: center.lng, zoom: 12 }}
+        mapStyle="mapbox://styles/mapbox/dark-v11" style={{ position: "absolute", inset: 0 }}>
+        {pts.map(v => (
+          <Marker key={v.id} latitude={parseFloat(v.latitude)} longitude={parseFloat(v.longitude)} anchor="bottom">
+            <div onClick={() => onSelect(v)} style={{ cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ background: "rgba(14,15,11,0.92)", border: `1px solid ${C.aureus}`, borderRadius: 10, padding: "3px 8px", fontSize: 9, color: C.aureus, fontFamily: "'EB Garamond', serif", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", backdropFilter: "blur(6px)" }}>{v.name}</div>
+              <div style={{ color: C.aureus, fontSize: 12, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>▾</div>
+            </div>
+          </Marker>
+        ))}
+      </MapboxMap>
+      {pts.length === 0 && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: C.marble, opacity: 0.5, fontSize: 12, fontFamily: "'EB Garamond', serif", pointerEvents: "none" }}>Nothing to map here.</div>}
+    </div>
+  );
+}
+
+function DealsScreen({ token, city, onClaimVenue }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
   const [day, setDay] = useState(new Date().getDay()); // 0=Sun; defaults to today
+  const [viewMode, setViewMode] = useState("list");
+  const [detailVenue, setDetailVenue] = useState(null);
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
   const today = new Date().getDay();
 
@@ -1358,18 +1411,29 @@ function DealsScreen({ token, city }) {
   const dayOrder = Array.from({ length: 7 }, (_, i) => (today + i) % 7);
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
-      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>{day === today ? "Today's" : DAY_LABELS[day] + "'s"} Deals · {city || "Charlotte"} · {visibleDeals.length}</div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 4 }}>
-        {dayOrder.map(d => (
-          <button key={d} onClick={() => setDay(d)} style={{ flexShrink: 0, padding: "5px 14px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid ${day === d ? C.aureus : "rgba(200,169,110,0.2)"}`, background: day === d ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: day === d ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d === today ? "Today" : DAY_LABELS[d]}</button>
-        ))}
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
+      <div style={{ padding: "8px 16px 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", opacity: 0.7 }}>{day === today ? "Today's" : DAY_LABELS[day] + "'s"} Deals · {city || "Charlotte"} · {visibleDeals.length}</div>
+          <button onClick={() => setViewMode(m => m === "list" ? "map" : "list")} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus }}>{viewMode === "list" ? "🗺 Map" : "☰ List"}</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 4 }}>
+          {dayOrder.map(d => (
+            <button key={d} onClick={() => setDay(d)} style={{ flexShrink: 0, padding: "5px 14px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid ${day === d ? C.aureus : "rgba(200,169,110,0.2)"}`, background: day === d ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: day === d ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d === today ? "Today" : DAY_LABELS[d]}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+          {DEAL_TAGS.map(t => (
+            <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
+          ))}
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
-        {DEAL_TAGS.map(t => (
-          <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
-        ))}
-      </div>
+      {viewMode === "map" ? (
+        <div style={{ flex: 1, display: "flex", padding: "0 16px 16px" }}>
+          <VenueMiniMap venues={visibleDeals.map(d => d.venues)} onSelect={setDetailVenue} />
+        </div>
+      ) : (
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px" }}>
       {redeemError && (
         <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{redeemError}</div>
       )}
@@ -1382,9 +1446,9 @@ function DealsScreen({ token, city }) {
             <div key={d.id} style={{ background: isRedeemed ? "rgba(200,169,110,0.02)" : "rgba(200,169,110,0.05)", borderRadius: 18, padding: 16, border: `1px solid ${isRedeemed ? "rgba(200,169,110,0.06)" : "rgba(200,169,110,0.18)"}`, opacity: isRedeemed ? 0.5 : 1, transition: "all 0.3s" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <div onClick={() => d.venues && setDetailVenue(d.venues)} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: d.venues ? "pointer" : "default" }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.aureus, boxShadow: `0 0 6px ${C.aureus}` }} />
-                    <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{d.venues?.name}</span>
+                    <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{d.venues?.name}{d.venues ? " ›" : ""}</span>
                     {day === today && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
                     {d.is_premium_only && <span style={{ fontSize: 8, color: C.aureus, background: "rgba(200,169,110,0.1)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 6, padding: "2px 6px" }}>✦ PREMIUM</span>}
                   </div>
@@ -1404,7 +1468,7 @@ function DealsScreen({ token, city }) {
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 10, color: C.marble, opacity: 0.3, fontFamily: "sans-serif" }}>💾 {d.save_count} saved</div>
+                <button onClick={() => d.venues && setDetailVenue(d.venues)} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: d.venues ? "pointer" : "default" }}>📍 View venue</button>
                 {d.source === "scraped" ? (
                   <span style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid rgba(232,230,225,0.18)", fontSize: 9, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
                 ) : (
@@ -1417,15 +1481,20 @@ function DealsScreen({ token, city }) {
           );
         })}
       </div>
+      </div>
+      )}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onClaim={onClaimVenue} />}
       {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }
 
-function EventsScreen({ token, city }) {
+function EventsScreen({ token, city, onClaimVenue }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dayFilter, setDayFilter] = useState(null);
+  const [viewMode, setViewMode] = useState("list");
+  const [detailVenue, setDetailVenue] = useState(null);
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
 
   useEffect(() => {
@@ -1453,14 +1522,25 @@ function EventsScreen({ token, city }) {
   const visible = dayFilter ? events.filter(e => e.occurrences?.includes(dayFilter)) : events;
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
-      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>What's On · {city || "Charlotte"} · {visible.length} {visible.length === 1 ? "event" : "events"}</div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
-        <button onClick={() => setDayFilter(null)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === null ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === null ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === null ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>All</button>
-        {days.map(d => (
-          <button key={d.dateStr} onClick={() => setDayFilter(f => f === d.dateStr ? null : d.dateStr)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === d.dateStr ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === d.dateStr ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === d.dateStr ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d.label}</button>
-        ))}
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
+      <div style={{ padding: "8px 16px 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", opacity: 0.7 }}>What's On · {city || "Charlotte"} · {visible.length} {visible.length === 1 ? "event" : "events"}</div>
+          <button onClick={() => setViewMode(m => m === "list" ? "map" : "list")} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus }}>{viewMode === "list" ? "🗺 Map" : "☰ List"}</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+          <button onClick={() => setDayFilter(null)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === null ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === null ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === null ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>All</button>
+          {days.map(d => (
+            <button key={d.dateStr} onClick={() => setDayFilter(f => f === d.dateStr ? null : d.dateStr)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === d.dateStr ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === d.dateStr ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === d.dateStr ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d.label}</button>
+          ))}
+        </div>
       </div>
+      {viewMode === "map" ? (
+        <div style={{ flex: 1, display: "flex", padding: "0 16px 16px" }}>
+          <VenueMiniMap venues={visible.map(e => e.venues)} onSelect={setDetailVenue} />
+        </div>
+      ) : (
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px" }}>
       {redeemError && (
         <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{redeemError}</div>
       )}
@@ -1473,9 +1553,9 @@ function EventsScreen({ token, city }) {
               <img src={e.cover_image_url} alt="" loading="lazy" onError={ev => { ev.currentTarget.style.display = "none"; }} style={{ width: "100%", height: 130, objectFit: "cover", display: "block" }} />
             )}
             <div style={{ padding: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+              <div onClick={() => e.venues && setDetailVenue(e.venues)} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap", cursor: e.venues ? "pointer" : "default" }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.aureus, boxShadow: `0 0 6px ${C.aureus}` }} />
-                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{e.venues?.name}</span>
+                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{e.venues?.name}{e.venues ? " ›" : ""}</span>
                 {e.is_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>HAPPENING NOW</span>}
               </div>
               <div style={{ fontSize: 16, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{e.title}</div>
@@ -1516,6 +1596,9 @@ function EventsScreen({ token, city }) {
           </div>
         ))}
       </div>
+      </div>
+      )}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onClaim={onClaimVenue} />}
       {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
@@ -2364,8 +2447,8 @@ export default function RoamApp() {
             <>
               {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
-              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} />}
-              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} />}
+              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
+              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} claimRequest={claimRequest} onClaimRequestHandled={() => setClaimRequest(null)} />}
               {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
             </>
