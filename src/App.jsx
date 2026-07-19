@@ -1338,24 +1338,33 @@ function DealsScreen({ token, city }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
+  const [day, setDay] = useState(new Date().getDay()); // 0=Sun; defaults to today
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
+  const today = new Date().getDay();
 
   useEffect(() => {
     let stale = false;
     setLoading(true);
-    apiFetch(`/api/deals?city=${encodeURIComponent(city || "Charlotte")}`).then(data => {
+    apiFetch(`/api/deals?city=${encodeURIComponent(city || "Charlotte")}&day=${day}`).then(data => {
       if (stale) return;
       if (Array.isArray(data)) setDeals(data);
       setLoading(false);
     });
     return () => { stale = true; };
-  }, [city]);
+  }, [city, day]);
 
   const visibleDeals = tagFilter ? deals.filter(d => d.tags?.includes(tagFilter)) : deals;
+  // Reorder day chips to start at today, so the default view leads the row
+  const dayOrder = Array.from({ length: 7 }, (_, i) => (today + i) % 7);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
-      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>Tonight's Deals · {city || "Charlotte"} · {visibleDeals.length} available</div>
+      <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, opacity: 0.7 }}>{day === today ? "Today's" : DAY_LABELS[day] + "'s"} Deals · {city || "Charlotte"} · {visibleDeals.length}</div>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 4 }}>
+        {dayOrder.map(d => (
+          <button key={d} onClick={() => setDay(d)} style={{ flexShrink: 0, padding: "5px 14px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid ${day === d ? C.aureus : "rgba(200,169,110,0.2)"}`, background: day === d ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: day === d ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d === today ? "Today" : DAY_LABELS[d]}</button>
+        ))}
+      </div>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
         {DEAL_TAGS.map(t => (
           <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
@@ -1365,7 +1374,7 @@ function DealsScreen({ token, city }) {
         <div style={{ background: "rgba(255,45,45,0.1)", border: "1px solid rgba(255,45,45,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{redeemError}</div>
       )}
       {loading && <div style={{ textAlign: "center", color: C.aureus, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.6 }}>Loading deals...</div>}
-      {!loading && visibleDeals.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>{tagFilter ? `No ${tagFilter} deals tonight — try another tag.` : "No deals tonight — check back later!"}</div>}
+      {!loading && visibleDeals.length === 0 && <div style={{ textAlign: "center", color: C.marble, fontSize: 13, padding: 20, fontFamily: "'EB Garamond', serif", opacity: 0.4 }}>{tagFilter ? `No ${tagFilter} deals ${day === today ? "today" : "on " + DAY_LABELS[day]} — try another tag or day.` : `No deals ${day === today ? "today" : "on " + DAY_LABELS[day]} — try another day.`}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {visibleDeals.map(d => {
           const isRedeemed = redeemed[d.id];
@@ -1376,6 +1385,7 @@ function DealsScreen({ token, city }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.aureus, boxShadow: `0 0 6px ${C.aureus}` }} />
                     <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{d.venues?.name}</span>
+                    {day === today && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
                     {d.is_premium_only && <span style={{ fontSize: 8, color: C.aureus, background: "rgba(200,169,110,0.1)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 6, padding: "2px 6px" }}>✦ PREMIUM</span>}
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</div>
