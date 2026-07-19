@@ -495,6 +495,10 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
           {phone && <a href={`tel:${phone}`} style={actionBtn}>📞 Call</a>}
           <a href={`https://maps.apple.com/?daddr=${encodeURIComponent(`${v.address}, ${v.city}`)}`} target="_blank" rel="noreferrer" style={actionBtn}>🧭 Directions</a>
           {website && <a href={website} target="_blank" rel="noreferrer" style={actionBtn}>🌐 Website</a>}
+          {v.instagram && (
+            <a href={v.instagram.startsWith("http") ? v.instagram : `https://instagram.com/${v.instagram.replace(/^@/, "")}`}
+              target="_blank" rel="noreferrer" style={actionBtn}>📸 Insta</a>
+          )}
         </div>
 
         {hoursWeek && (
