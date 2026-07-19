@@ -711,6 +711,19 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
     }));
   }
 
+  // Own position: watching GPS is what triggers the OS location-permission
+  // prompt; the self pin renders only while Share My Location is on.
+  const [selfPos, setSelfPos] = useState(null);
+  useEffect(() => {
+    if (!user?.location_sharing || !navigator.geolocation) { setSelfPos(null); return; }
+    const id = navigator.geolocation.watchPosition(
+      p => setSelfPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => setMapMsg("Couldn't access your location — check Roaman's location permission in device settings."),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [user?.location_sharing]);
+
   useEffect(() => {
     loadFriends();
     const poll = setInterval(() => {
@@ -919,6 +932,15 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
               </div>
             </Marker>
           ))}
+          {selfPos && (
+            <Marker latitude={selfPos.lat} longitude={selfPos.lng} anchor="center">
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, rgba(200,169,110,0.5), rgba(14,15,11,0.9))`, border: `2px solid ${C.ivory}`, boxShadow: pulse ? `0 0 0 2px rgba(14,15,11,0.9), 0 0 16px ${C.aureus}` : `0 0 0 2px rgba(14,15,11,0.9), 0 0 6px ${C.aureus}`, transition: "box-shadow 0.6s", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                {user?.avatar_url
+                  ? <img src={user.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <span style={{ fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>{(user?.display_name || user?.username || "?")[0].toUpperCase()}</span>}
+              </div>
+            </Marker>
+          )}
         </MapboxMap>
       </div>
       {loading && (
@@ -1303,7 +1325,7 @@ function StoriesScreen({ token }) {
                 <span style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.6 }}>{timeAgo(s.created_at)}</span>
               </div>
               <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", fontStyle: "italic", marginBottom: 4, opacity: 0.8 }}>"{s.caption}"</div>
-              <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.5 }}>by {s.is_anonymous ? "Anonymous" : s.users?.display_name || "Roamer"} · 🤍 {s.like_count}</div>
+              <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.5 }}>by {s.is_anonymous ? "Anonymous" : s.users?.display_name || "Roamer"} · {liked[s.id] ? "❤️" : "🤍"} {s.like_count + (liked[s.id] ? 1 : 0)}</div>
             </div>
           </div>
         ))}
