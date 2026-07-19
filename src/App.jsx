@@ -961,6 +961,9 @@ function FriendsScreen({ token, onClose }) {
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const searchTimerRef = useRef(null);
+  const searchSeqRef = useRef(0);
 
   async function reload() {
     const [reqs, frs] = await Promise.all([
@@ -987,14 +990,28 @@ function FriendsScreen({ token, onClose }) {
     reload();
   }
 
-  async function sendRequest() {
-    if (!addUsername.trim() || sending) return;
+  function onAddInput(value) {
+    setAddUsername(value); setAddMsg(null);
+    clearTimeout(searchTimerRef.current);
+    const q = value.trim();
+    if (q.length < 2) { setSuggestions([]); return; }
+    searchTimerRef.current = setTimeout(async () => {
+      const seq = ++searchSeqRef.current;
+      const data = await apiFetch(`/api/friends/search?q=${encodeURIComponent(q)}`, {}, token);
+      if (seq === searchSeqRef.current && Array.isArray(data)) setSuggestions(data);
+    }, 300);
+  }
+  useEffect(() => () => clearTimeout(searchTimerRef.current), []);
+
+  async function sendRequestTo(username) {
+    if (!username || sending) return;
     setSending(true); setAddMsg(null);
-    const result = await apiFetch("/api/friends/request", { method: "POST", body: JSON.stringify({ username: addUsername.trim() }) }, token);
+    const result = await apiFetch("/api/friends/request", { method: "POST", body: JSON.stringify({ username }) }, token);
     if (result?.error) setAddMsg({ ok: false, text: result.error });
-    else { setAddMsg({ ok: true, text: "Request sent!" }); setAddUsername(""); }
+    else { setAddMsg({ ok: true, text: "Request sent!" }); setAddUsername(""); setSuggestions([]); }
     setSending(false);
   }
+  const sendRequest = () => sendRequestTo(addUsername.trim());
 
   const Avatar = ({ u }) => (
     <div style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, background: `linear-gradient(135deg, rgba(200,169,110,0.3), rgba(200,169,110,0.1))`, border: `1px solid rgba(200,169,110,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -1063,12 +1080,26 @@ function FriendsScreen({ token, onClose }) {
             </div>
             <div style={sectionLabel}>Add Friend</div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input value={addUsername} onChange={e => { setAddUsername(e.target.value); setAddMsg(null); }} placeholder="Search by username..."
+              <input value={addUsername} onChange={e => onAddInput(e.target.value)} placeholder="Search by username..."
                 onKeyDown={e => { if (e.key === "Enter") sendRequest(); }}
                 style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
               <button onClick={sendRequest} disabled={sending || !addUsername.trim()}
                 style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (sending || !addUsername.trim()) ? "default" : "pointer", opacity: (sending || !addUsername.trim()) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>Send</button>
             </div>
+            {suggestions.length > 0 && (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                {suggestions.map(u => (
+                  <button key={u.id} onClick={() => sendRequestTo(u.username)} disabled={sending} style={{ ...card, cursor: "pointer", width: "100%", textAlign: "left", opacity: sending ? 0.6 : 1 }}>
+                    <Avatar u={u} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{u.display_name || u.username}</div>
+                      <div style={{ fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}>@{u.username}</div>
+                    </div>
+                    <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", flexShrink: 0 }}>+ Add</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {addMsg && <div style={{ marginTop: 8, fontSize: 11, color: addMsg.ok ? C.aureus : "#e07a6a", fontFamily: "'EB Garamond', serif" }}>{addMsg.text}</div>}
           </>
         )}
