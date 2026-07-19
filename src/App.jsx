@@ -543,6 +543,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</span>
                     {d.recur_days && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
                     {d.is_premium_only && <span style={{ fontSize: 8, color: C.aureus, background: "rgba(200,169,110,0.1)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 6, padding: "2px 6px" }}>✦ PREMIUM</span>}
+                    {d.source === "scraped" && <span style={{ fontSize: 8, color: C.marble, opacity: 0.55, border: "1px solid rgba(232,230,225,0.18)", borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>}
                   </div>
                   {d.detail && <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>{d.detail}</div>}
                   <div style={{ fontSize: 10, color: C.aureus, marginTop: 4, fontFamily: "'EB Garamond', serif" }}>
