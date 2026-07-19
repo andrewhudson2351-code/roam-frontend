@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+﻿import React, { useEffect, useState, useRef } from 'react';
 
-const API = import.meta.env.VITE_API_URL;
+import { API } from "./api";
 
 export default function BillingSuccess({ getToken }) {
   const params = new URLSearchParams(window.location.search);
@@ -65,15 +65,15 @@ export default function BillingSuccess({ getToken }) {
         {status === 'loading' && (
           <>
             <div style={spinner} />
-            <h1 style={heading}>Confirming your subscription…</h1>
+            <h1 style={heading}>Confirming your subscriptionâ€¦</h1>
             <p style={sub}>Hang tight, syncing with Stripe.</p>
           </>
         )}
         {status === 'confirmed' && (
           <>
-            <div style={checkCircle}>✓</div>
+            <div style={checkCircle}>âœ“</div>
             <h1 style={heading}>You're on <span style={{ color: tierColor }}>{tierLabel}</span></h1>
-            <p style={sub}>Redirecting to your dashboard in a moment…</p>
+            <p style={sub}>Redirecting to your dashboard in a momentâ€¦</p>
             <button style={{ ...btn, background: tierColor }} onClick={() => window.location.href = '/dashboard'}>
               Go to dashboard
             </button>
@@ -82,8 +82,8 @@ export default function BillingSuccess({ getToken }) {
         {status === 'pending' && (
           <>
             <div style={{ ...checkCircle, background: '#1A1200', border: '2px solid #3D2E00', color: '#E8A020' }}>!</div>
-            <h1 style={heading}>Payment received — still processing</h1>
-            <p style={sub}>Your upgrade is being confirmed by Stripe. It usually lands within a few minutes — your dashboard will show the new plan automatically.</p>
+            <h1 style={heading}>Payment received â€” still processing</h1>
+            <p style={sub}>Your upgrade is being confirmed by Stripe. It usually lands within a few minutes â€” your dashboard will show the new plan automatically.</p>
             <button style={{ ...btn, background: '#E8A020' }} onClick={() => window.location.href = '/dashboard'}>
               Go to dashboard
             </button>

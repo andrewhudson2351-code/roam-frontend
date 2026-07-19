@@ -6,8 +6,8 @@ import PricingPage from "./PricingPage";
 import BillingSuccess from "./BillingSuccess";
 import BillingCancel from "./BillingCancel";
 import BillingDashboard from "./BillingDashboard";
+import { API } from "./api";
 
-const API = "https://roam-backend-production.up.railway.app";
 const IS_NATIVE = Capacitor.isNativePlatform();
 
 const C = {

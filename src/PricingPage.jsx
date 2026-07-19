@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 
 const TIERS = [
@@ -41,14 +41,14 @@ const TIERS = [
       'Everything in Pro',
       '90-day analytics dashboard',
       'Unlimited deal postings',
-      'Heatmap boost — surface first',
+      'Heatmap boost â€” surface first',
       'Priority placement in search',
       'Dedicated support',
     ],
   },
 ];
 
-const API = import.meta.env.VITE_API_URL;
+import { API } from "./api";
 
 export default function PricingPage({ user, getToken, venue }) {
   const [loading, setLoading] = useState(null);
@@ -146,7 +146,7 @@ export default function PricingPage({ user, getToken, venue }) {
               <ul style={styles.featureList}>
                 {tier.features.map((f) => (
                   <li key={f} style={styles.featureItem}>
-                    <span style={{ color: tier.color, fontWeight: 700, flexShrink: 0 }}>✓</span>
+                    <span style={{ color: tier.color, fontWeight: 700, flexShrink: 0 }}>âœ“</span>
                     {f}
                   </li>
                 ))}

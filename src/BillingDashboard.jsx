@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 
-const API = import.meta.env.VITE_API_URL;
+import { API } from "./api";
 
 export default function BillingDashboard({ user, getToken, venue }) {
   const [sub, setSub]             = useState(null);
