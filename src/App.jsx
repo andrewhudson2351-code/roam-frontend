@@ -1508,6 +1508,14 @@ function DashboardScreen({ token, user }) {
     loadDash(selected); setPosting(false);
   }
 
+  // action: "adopt" (deal becomes owner-verified and redeemable) or "dismiss" (deactivated)
+  async function moderateScrapedDeal(dealId, action) {
+    const result = await apiFetch(`/api/deals/${dealId}/${action}`, { method: "POST" }, token);
+    if (result?.error) return setDashMsg(result.error);
+    setDashMsg(null);
+    loadDash(selected);
+  }
+
   function toggleDealTag(tag) {
     setNewDeal(d => {
       if (d.tags.includes(tag)) return { ...d, tags: d.tags.filter(t => t !== tag) };
@@ -1945,12 +1953,20 @@ function DashboardScreen({ token, user }) {
             <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.1)` }}>
               <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Active Deals</div>
               {dash.active_deals.map(d => (
-                <div key={d.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid rgba(200,169,110,0.08)` }}>
-                  <div>
+                <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid rgba(200,169,110,0.08)` }}>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{d.title}</div>
                     {d.recur_days && <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.8, marginTop: 1 }}>↻ {recurLabel(d)}</div>}
+                    {d.source === "scraped" && <div style={{ fontSize: 8, color: C.marble, opacity: 0.5, fontFamily: "sans-serif", letterSpacing: 1, marginTop: 2, textTransform: "uppercase" }}>Found on your website · not verified</div>}
                   </div>
-                  <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif" }}>✦ {d.redemption_count}</div>
+                  {d.source === "scraped" ? (
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => moderateScrapedDeal(d.id, "adopt")} style={{ padding: "6px 12px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 10, letterSpacing: 0.5, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon }}>✓ Verify</button>
+                      <button onClick={() => moderateScrapedDeal(d.id, "dismiss")} style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid rgba(232,230,225,0.18)", cursor: "pointer", fontFamily: "sans-serif", fontSize: 10, letterSpacing: 0.5, background: "transparent", color: C.marble, opacity: 0.6 }}>✕ Remove</button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", flexShrink: 0 }}>✦ {d.redemption_count}</div>
+                  )}
                 </div>
               ))}
             </div>
