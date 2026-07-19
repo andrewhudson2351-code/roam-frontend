@@ -378,7 +378,7 @@ function ResetPasswordScreen() {
 
 const HOUR_MARKS = [[0, "6am"], [6, "12pm"], [12, "6pm"], [18, "12am"]];
 
-function VenueDetailScreen({ venue, token, onClose, onReported }) {
+function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
   const [data, setData] = useState(null);
   const [weekOpen, setWeekOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -618,6 +618,15 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
             </div>
           </div>
         )}
+
+        {data && data.is_claimed === false && (
+          <div style={{ marginTop: 24 }}>
+            <button onClick={() => onClaim?.(v)} style={{ width: "100%", padding: "12px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, letterSpacing: 0.5 }}>
+              Own this venue? Claim it
+            </button>
+            <div style={{ fontSize: 10, color: C.marble, opacity: 0.4, marginTop: 6, textAlign: "center", fontFamily: "'EB Garamond', serif" }}>Free — verify by phone in about two minutes</div>
+          </div>
+        )}
       </div>
       </div>
 
@@ -632,7 +641,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported }) {
   );
 }
 
-function HeatmapScreen({ token, user, currentCity, setCurrentCity }) {
+function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
   const [detailVenue, setDetailVenue] = useState(null);
@@ -937,7 +946,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity }) {
           <button onClick={() => setActiveFriend(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 14 }}>✕</button>
         </div>
       )}
-      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues()} />}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues()} onClaim={onClaimVenue} />}
       {showFriends && <FriendsScreen token={token} onClose={() => setShowFriends(false)} />}
     </div>
   );
@@ -1386,7 +1395,7 @@ function EventsScreen({ token, city }) {
   );
 }
 
-function DashboardScreen({ token, user }) {
+function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
   const [dash, setDash] = useState(null);
@@ -1405,11 +1414,14 @@ function DashboardScreen({ token, user }) {
   const [posting, setPosting] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [lastReport, setLastReport] = useState(null);
-  const [claimView, setClaimView] = useState("dashboard");
+  // A claimRequest (venue passed from the map's "Claim it" CTA) opens the
+  // claim flow directly on the confirm step for that venue.
+  const [claimView, setClaimView] = useState(claimRequest ? "confirm" : "dashboard");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [claimTarget, setClaimTarget] = useState(null);
+  const [claimTarget, setClaimTarget] = useState(claimRequest || null);
+  const externalClaimRef = useRef(!!claimRequest);
   const [claiming, setClaiming] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [dashMsg, setDashMsg] = useState(null);
@@ -1421,16 +1433,16 @@ function DashboardScreen({ token, user }) {
   const [verifying, setVerifying] = useState(false);
   const [recentRedemptions, setRecentRedemptions] = useState([]);
 
-  useEffect(() => { loadMyVenues(); }, []);
+  useEffect(() => { loadMyVenues(); if (claimRequest) onClaimRequestHandled?.(); }, []);
 
   async function loadMyVenues() {
     setLoading(true);
     const data = await apiFetch("/api/venues/mine", {}, token);
-    if (Array.isArray(data) && data.length > 0) { setVenues(data); loadDash(data[0].id); }
-    else { setLoading(false); setClaimView("search"); }
+    if (Array.isArray(data) && data.length > 0) { setVenues(data); loadDash(data[0].id, externalClaimRef.current); }
+    else { setLoading(false); if (!externalClaimRef.current) setClaimView("search"); }
   }
 
-  async function loadDash(venueId) {
+  async function loadDash(venueId, keepClaimView = false) {
     setLoading(true); setSelected(venueId);
     const [data, redemptions] = await Promise.all([
       apiFetch(`/api/dashboard/${venueId}`, {}, token),
@@ -1438,7 +1450,7 @@ function DashboardScreen({ token, user }) {
     ]);
     if (data?.error) setDashMsg(data.error); else setDash(data);
     setRecentRedemptions(Array.isArray(redemptions) ? redemptions : []);
-    setLoading(false); setClaimView("dashboard");
+    setLoading(false); if (!keepClaimView) setClaimView("dashboard");
   }
 
   async function searchVenues() {
@@ -1451,6 +1463,7 @@ function DashboardScreen({ token, user }) {
 
   async function startClaim() {
     if (!claimTarget) return;
+    externalClaimRef.current = false; // claim flow engaged; resume normal view handling
     setClaiming(true);
     setClaimError(null);
     const options = { method: "POST" };
@@ -2142,6 +2155,7 @@ export default function RoamApp() {
   const [tab, setTab] = useState("map");
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
+  const [claimRequest, setClaimRequest] = useState(null);
 
   const path = window.location.pathname;
   const getToken = async () => localStorage.getItem("roam_token");
@@ -2222,11 +2236,11 @@ export default function RoamApp() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {!currentUser ? <AuthScreen onAuth={handleAuth} /> : (
             <>
-              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} />}
+              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} />}
               {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} />}
-              {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} />}
+              {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} claimRequest={claimRequest} onClaimRequestHandled={() => setClaimRequest(null)} />}
               {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
             </>
           )}
