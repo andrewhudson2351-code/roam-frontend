@@ -1269,9 +1269,13 @@ function DealsScreen({ token, city }) {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 10, color: C.marble, opacity: 0.3, fontFamily: "sans-serif" }}>💾 {d.save_count} saved</div>
+                {d.source === "scraped" ? (
+                  <span style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid rgba(232,230,225,0.18)", fontSize: 9, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
+                ) : (
                 <button onClick={() => redeem(d)} style={{ padding: "7px 18px", borderRadius: 12, border: isRedeemed ? `1px solid rgba(200,169,110,0.4)` : "none", cursor: d.is_premium_only && !isRedeemed ? "not-allowed" : "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 11, letterSpacing: 0.5, background: isRedeemed ? "rgba(200,169,110,0.1)" : d.is_premium_only ? "rgba(200,169,110,0.1)" : `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: isRedeemed || d.is_premium_only ? C.aureus : C.carbon }}>
                   {isRedeemed ? "View Receipt" : d.is_premium_only ? "🔒 Premium" : "Redeem"}
                 </button>
+                )}
               </div>
             </div>
           );
@@ -1360,9 +1364,13 @@ function EventsScreen({ token, city }) {
                           <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{d.title}</div>
                           {d.detail && <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif" }}>{d.detail}</div>}
                         </div>
+                        {d.source === "scraped" ? (
+                          <span style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 10, border: "1px solid rgba(232,230,225,0.18)", fontSize: 8, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
+                        ) : (
                         <button onClick={() => redeem(dealForModal)} style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 10, border: isRedeemed ? `1px solid rgba(200,169,110,0.4)` : "none", cursor: d.is_premium_only && !isRedeemed ? "not-allowed" : "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 10, letterSpacing: 0.5, background: isRedeemed ? "rgba(200,169,110,0.1)" : d.is_premium_only ? "rgba(200,169,110,0.1)" : `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: isRedeemed || d.is_premium_only ? C.aureus : C.carbon }}>
                           {isRedeemed ? "View Receipt" : d.is_premium_only ? "🔒 Premium" : "Redeem"}
                         </button>
+                        )}
                       </div>
                     );
                   })}
