@@ -76,6 +76,26 @@ async function apiFetch(path, options = {}, token = null) {
   }
 }
 
+// Downscale a photo to maxDim and re-encode as JPEG so uploads stay small
+// (iOS camera shots are 12MP+; the stories bucket caps files at 5 MB).
+function compressImage(file, maxDim = 1280, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("unreadable image")); };
+    img.src = url;
+  });
+}
+
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
   if (diff < 60) return `${diff}s ago`;
@@ -1121,6 +1141,19 @@ function StoriesScreen({ token }) {
   const [postError, setPostError] = useState("");
   const [storyVisibility, setStoryVisibility] = useState("public");
   const [feedError, setFeedError] = useState("");
+  const [photo, setPhoto] = useState(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  async function onPhotoPicked(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoBusy(true); setPostError("");
+    try { setPhoto(await compressImage(file)); }
+    catch { setPostError("Couldn't read that photo — try another."); }
+    setPhotoBusy(false);
+  }
 
   useEffect(() => {
     apiFetch("/api/stories", {}, token).then(data => {
@@ -1145,12 +1178,18 @@ function StoriesScreen({ token }) {
     setPosting(true); setPostError("");
     const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
     try {
-      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: storyVisibility }) }, token);
+      let media_url = null;
+      if (photo) {
+        const up = await apiFetch("/api/stories/upload", { method: "POST", body: JSON.stringify({ image: photo }) }, token);
+        if (up?.error) { setPostError(up.error); setPosting(false); return; }
+        media_url = up.media_url;
+      }
+      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: storyVisibility, media_url }) }, token);
       if (result?.error) { setPostError(result.error); setPosting(false); return; }
       const data = await apiFetch("/api/stories", {}, token);
       if (Array.isArray(data)) { setStories(data); setFeedError(""); }
       else if (data?.error) setFeedError(data.error);
-      setNewCaption(""); setSelectedVenue(null); setVenueQuery("");
+      setNewCaption(""); setSelectedVenue(null); setVenueQuery(""); setPhoto(null);
     } catch {
       setPostError("Failed to post story. Try again.");
     }
@@ -1199,21 +1238,37 @@ function StoriesScreen({ token }) {
             </button>
           ))}
         </div>
+        {photo && (
+          <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+            <img src={photo} alt="" style={{ height: 72, borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, display: "block" }} />
+            <button onClick={() => setPhoto(null)} style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.obsidian, color: C.aureus, fontSize: 11, cursor: "pointer", lineHeight: 1 }}>✕</button>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8 }}>
+          <input ref={fileRef} type="file" accept="image/*" onChange={onPhotoPicked} style={{ display: "none" }} />
+          <button onClick={() => fileRef.current?.click()} disabled={photoBusy}
+            style={{ width: 38, borderRadius: 20, border: `1px solid rgba(200,169,110,0.25)`, background: photo ? "rgba(200,169,110,0.15)" : "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 15, cursor: "pointer", opacity: photoBusy ? 0.5 : 1 }}>{photoBusy ? "…" : "📷"}</button>
           <input value={newCaption} onChange={e => setNewCaption(e.target.value)} placeholder="What's happening at a venue?"
             style={{ flex: 1, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
           <button onClick={postStory} disabled={posting || !newCaption.trim() || !selectedVenue}
-            style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (posting || !newCaption.trim() || !selectedVenue) ? "default" : "pointer", opacity: (posting || !newCaption.trim() || !selectedVenue) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>Post</button>
+            style={{ padding: "8px 14px", borderRadius: 20, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: (posting || !newCaption.trim() || !selectedVenue) ? "default" : "pointer", opacity: (posting || !newCaption.trim() || !selectedVenue) ? 0.5 : 1, fontFamily: "'Playfair Display', serif" }}>{posting ? "..." : "Post"}</button>
         </div>
         {postError && <div style={{ marginTop: 6, fontSize: 11, color: "#e07a6a", fontFamily: "'EB Garamond', serif" }}>{postError}</div>}
       </div>
       {active && (
         <div onClick={() => setActive(null)} style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)" }}>
           <div onClick={e => e.stopPropagation()} style={{ width: "85%", borderRadius: 24, overflow: "hidden", background: C.obsidian, border: `1px solid rgba(200,169,110,0.2)` }}>
+            {active.media_url ? (
+              <div style={{ position: "relative" }}>
+                <img src={active.media_url} alt="" style={{ width: "100%", maxHeight: 340, objectFit: "cover", display: "block" }} onError={e => { e.currentTarget.style.display = "none"; }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "18px 14px 8px", background: "linear-gradient(to top, rgba(14,15,11,0.85), transparent)", fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{active.venues?.name || "A venue"}</div>
+              </div>
+            ) : (
             <div style={{ height: 160, background: `linear-gradient(135deg, rgba(200,169,110,0.2), rgba(14,15,11,0.9))`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <div style={{ fontSize: 48 }}>{active.emoji || "📸"}</div>
               <div style={{ fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{active.venues?.name || "A venue"}</div>
             </div>
+            )}
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 14, color: C.marble, fontFamily: "'EB Garamond', serif", fontStyle: "italic", marginBottom: 10 }}>"{active.caption}"</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1233,7 +1288,11 @@ function StoriesScreen({ token }) {
         {stories.map(s => (
           <div key={s.id} onClick={() => setActive(s)}
             style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, border: `1px solid rgba(200,169,110,0.12)`, cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start" }}>
+            {s.media_url ? (
+              <img src={s.media_url} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = "none"; }} style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover", border: `1px solid rgba(200,169,110,0.3)`, flexShrink: 0 }} />
+            ) : (
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: `linear-gradient(135deg, rgba(200,169,110,0.3), rgba(200,169,110,0.1))`, border: `1px solid rgba(200,169,110,0.3)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{s.emoji || "📸"}</div>
+            )}
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{s.venues?.name || "A venue"}</span>
