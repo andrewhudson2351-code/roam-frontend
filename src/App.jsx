@@ -665,6 +665,12 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
   );
 }
 
+// Module-level so they survive HeatmapScreen remounts (tab switches) but reset
+// on a full app reload: the map keeps its position across tabs, and we only
+// auto-center on the user once per app launch.
+let mapCameraState = null;   // last { latitude, longitude, zoom }
+let hasAutoCentered = false; // whether we've auto-centered on the user this launch
+
 function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
@@ -721,11 +727,16 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   // live location to the backend (throttled) so friends can see it.
   const [selfPos, setSelfPos] = useState(null);
   const lastPushRef = useRef(0);
-  const centeredRef = useRef(false);
+  // Auto-center only once per app launch (hasAutoCentered persists across tab
+  // switches), so returning to the map keeps wherever you left it.
   function centerOnSelf(pos) {
-    if (centeredRef.current || !mapRef.current) return;
-    centeredRef.current = true;
+    if (hasAutoCentered || !mapRef.current) return;
+    hasAutoCentered = true;
     mapRef.current.flyTo({ center: [pos.lng, pos.lat], zoom: 14 });
+  }
+  function recenterOnMe() {
+    if (selfPos) mapRef.current?.flyTo({ center: [selfPos.lng, selfPos.lat], zoom: 15 });
+    else setMapMsg("Turn on Share My Location in Settings to center on you.");
   }
   useEffect(() => {
     if (!user?.location_sharing || !navigator.geolocation) { setSelfPos(null); return; }
@@ -791,7 +802,8 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   }, [currentCity]);
 
   function handleMoveEnd(evt) {
-    const { latitude, longitude } = evt.viewState;
+    const { latitude, longitude, zoom } = evt.viewState;
+    mapCameraState = { latitude, longitude, zoom }; // remember across tab switches
     // currentCity is display/mode state only — it never drives a fetch
     setCurrentCity(getCityFromCoords(latitude, longitude));
     clearTimeout(moveDebounceRef.current);
@@ -937,6 +949,10 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
           style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
           <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>🔍 Search</span>
         </button>
+        <button onClick={recenterOnMe}
+          style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
+          <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>📍 Me</span>
+        </button>
       </div>
       {searchOpen && (
         <div style={{ position: "absolute", top: 12, left: 12, right: 12, zIndex: 20 }}>
@@ -958,7 +974,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
         <MapboxMap
           ref={mapRef}
           mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-          initialViewState={{ latitude: cityCenter?.lat ?? 35.2271, longitude: cityCenter?.lng ?? -80.8431, zoom: 14 }}
+          initialViewState={mapCameraState || { latitude: cityCenter?.lat ?? 35.2271, longitude: cityCenter?.lng ?? -80.8431, zoom: 14 }}
           mapStyle="mapbox://styles/mapbox/dark-v11"
           style={{ position: "absolute", inset: 0 }}
           onLoad={() => { loadVenues(); if (selfPos) centerOnSelf(selfPos); }}
