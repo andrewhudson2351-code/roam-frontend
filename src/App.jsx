@@ -671,6 +671,10 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   const [detailVenue, setDetailVenue] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState("visitor");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [venueSearch, setVenueSearch] = useState("");
+  const [venueResults, setVenueResults] = useState([]);
+  const searchTimerRef = useRef(null);
   const modeOverrideRef = useRef(false);
   const [pulse, setPulse] = useState(true);
   const [showFriends, setShowFriends] = useState(false);
@@ -840,6 +844,22 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
     if (c) mapRef.current?.flyTo({ center: [c.lng, c.lat], zoom: 14 });
   }
 
+  function onVenueSearchInput(value) {
+    setVenueSearch(value);
+    clearTimeout(searchTimerRef.current);
+    const q = value.trim();
+    if (q.length < 2) { setVenueResults([]); return; }
+    searchTimerRef.current = setTimeout(async () => {
+      const data = await apiFetch(`/api/venues/search?q=${encodeURIComponent(q)}`, {}, token);
+      if (Array.isArray(data)) setVenueResults(data);
+    }, 300);
+  }
+  function openSearchVenue(v) {
+    setSearchOpen(false); setVenueSearch(""); setVenueResults([]);
+    if (!isNaN(parseFloat(v.latitude)) && !isNaN(parseFloat(v.longitude))) mapRef.current?.flyTo({ center: [parseFloat(v.longitude), parseFloat(v.latitude)], zoom: 15 });
+    setDetailVenue(v);
+  }
+
   const filters = ["All", "Bar", "Club", "Restaurant"];
   const cityCenter = CITIES.find(c => c.name === currentCity);
   function sortByMode(list) {
@@ -913,7 +933,27 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
           style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
           <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>👥 Friends</span>
         </button>
+        <button onClick={() => { setSearchOpen(o => !o); setVenueSearch(""); setVenueResults([]); }}
+          style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
+          <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>🔍 Search</span>
+        </button>
       </div>
+      {searchOpen && (
+        <div style={{ position: "absolute", top: 12, left: 12, right: 12, zIndex: 20 }}>
+          <input autoFocus value={venueSearch} onChange={e => onVenueSearchInput(e.target.value)} placeholder="Search venues..."
+            style={{ width: "100%", boxSizing: "border-box", background: "rgba(14,15,11,0.96)", border: `1px solid rgba(200,169,110,0.4)`, borderRadius: 20, padding: "10px 16px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none", backdropFilter: "blur(8px)" }} />
+          {venueResults.length > 0 && (
+            <div style={{ marginTop: 6, background: "rgba(14,15,11,0.97)", border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 12, overflow: "hidden", backdropFilter: "blur(8px)", maxHeight: 280, overflowY: "auto" }}>
+              {venueResults.map(v => (
+                <div key={v.id} onClick={() => openSearchVenue(v)} style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid rgba(200,169,110,0.08)` }}>
+                  <div style={{ fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{v.name}{v.is_claimed ? " ✓" : ""}</div>
+                  <div style={{ fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}>{[v.neighborhood, v.city].filter(Boolean).join(" · ")}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div style={{ flex: 1, position: "relative" }}>
         <MapboxMap
           ref={mapRef}
@@ -1392,6 +1432,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
   const [day, setDay] = useState(new Date().getDay()); // 0=Sun; defaults to today
   const [viewMode, setViewMode] = useState("list");
   const [detailVenue, setDetailVenue] = useState(null);
+  const [search, setSearch] = useState("");
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
   const today = new Date().getDay();
 
@@ -1406,17 +1447,21 @@ function DealsScreen({ token, city, onClaimVenue }) {
     return () => { stale = true; };
   }, [city, day]);
 
-  const visibleDeals = tagFilter ? deals.filter(d => d.tags?.includes(tagFilter)) : deals;
+  const q = search.trim().toLowerCase();
+  const visibleDeals = deals
+    .filter(d => !tagFilter || d.tags?.includes(tagFilter))
+    .filter(d => !q || (d.title || "").toLowerCase().includes(q) || (d.detail || "").toLowerCase().includes(q) || (d.venues?.name || "").toLowerCase().includes(q));
   // Reorder day chips to start at today, so the default view leads the row
   const dayOrder = Array.from({ length: 7 }, (_, i) => (today + i) % 7);
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg, position: "relative" }}>
       <div style={{ padding: "8px 16px 0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", opacity: 0.7 }}>{day === today ? "Today's" : DAY_LABELS[day] + "'s"} Deals · {city || "Charlotte"} · {visibleDeals.length}</div>
           <button onClick={() => setViewMode(m => m === "list" ? "map" : "list")} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus }}>{viewMode === "list" ? "🗺 Map" : "☰ List"}</button>
         </div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals or venues..." style={{ width: "100%", boxSizing: "border-box", marginBottom: 10, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
         <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 4 }}>
           {dayOrder.map(d => (
             <button key={d} onClick={() => setDay(d)} style={{ flexShrink: 0, padding: "5px 14px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid ${day === d ? C.aureus : "rgba(200,169,110,0.2)"}`, background: day === d ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: day === d ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d === today ? "Today" : DAY_LABELS[d]}</button>
@@ -1495,6 +1540,7 @@ function EventsScreen({ token, city, onClaimVenue }) {
   const [dayFilter, setDayFilter] = useState(null);
   const [viewMode, setViewMode] = useState("list");
   const [detailVenue, setDetailVenue] = useState(null);
+  const [search, setSearch] = useState("");
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
 
   useEffect(() => {
@@ -1519,15 +1565,19 @@ function EventsScreen({ token, city, onClaimVenue }) {
     return out;
   }, []);
 
-  const visible = dayFilter ? events.filter(e => e.occurrences?.includes(dayFilter)) : events;
+  const eq = search.trim().toLowerCase();
+  const visible = events
+    .filter(e => !dayFilter || e.occurrences?.includes(dayFilter))
+    .filter(e => !eq || (e.title || "").toLowerCase().includes(eq) || (e.description || "").toLowerCase().includes(eq) || (e.venues?.name || "").toLowerCase().includes(eq) || (e.tags || []).some(t => t.toLowerCase().includes(eq)));
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg, position: "relative" }}>
       <div style={{ padding: "8px 16px 0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", opacity: 0.7 }}>What's On · {city || "Charlotte"} · {visible.length} {visible.length === 1 ? "event" : "events"}</div>
           <button onClick={() => setViewMode(m => m === "list" ? "map" : "list")} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus }}>{viewMode === "list" ? "🗺 Map" : "☰ List"}</button>
         </div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search events or venues..." style={{ width: "100%", boxSizing: "border-box", marginBottom: 10, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
         <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
           <button onClick={() => setDayFilter(null)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${dayFilter === null ? C.aureus : "rgba(200,169,110,0.2)"}`, background: dayFilter === null ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: dayFilter === null ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>All</button>
           {days.map(d => (
