@@ -2462,6 +2462,28 @@ export default function RoamApp() {
   const currentToken = token || savedToken;
   const [currentCity, setCurrentCity] = useState("Charlotte");
 
+  // Push notifications (iOS only): register the APNs device token with the
+  // backend whenever a logged-in user is present. The plugin is loaded lazily
+  // so it never touches the web build.
+  const pushTokenRef = useRef(currentToken);
+  useEffect(() => { pushTokenRef.current = currentToken; }, [currentToken]);
+  useEffect(() => {
+    if (!IS_NATIVE || !currentToken) return;
+    let regL, errL;
+    (async () => {
+      const { PushNotifications } = await import("@capacitor/push-notifications");
+      regL = await PushNotifications.addListener("registration", t => {
+        const tok = pushTokenRef.current;
+        if (tok) apiFetch("/api/notifications/register", { method: "POST", body: JSON.stringify({ token: t.value, platform: "ios" }) }, tok).catch(() => {});
+      });
+      errL = await PushNotifications.addListener("registrationError", e => console.warn("push registrationError", e));
+      let perm = await PushNotifications.checkPermissions();
+      if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") perm = await PushNotifications.requestPermissions();
+      if (perm.receive === "granted") await PushNotifications.register();
+    })();
+    return () => { regL?.remove?.(); errL?.remove?.(); };
+  }, [currentToken]);
+
   const tabs = [
     { id: "map",       icon: "🗺️", label: "Map" },
     { id: "stories",   icon: "📸", label: "Stories" },
