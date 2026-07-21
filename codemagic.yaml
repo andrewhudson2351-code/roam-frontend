@@ -37,7 +37,11 @@ workflows:
         script: |
           xcode-project build-ipa \
             --project "ios/App/App.xcodeproj" \
-            --scheme "App"
+            --scheme "App" || {
+              echo "=========== xcodebuild.log (tail) ===========";
+              tail -200 xcodebuild.log 2>/dev/null || tail -200 /Users/builder/clone/xcodebuild.log 2>/dev/null;
+              exit 1;
+            }
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
