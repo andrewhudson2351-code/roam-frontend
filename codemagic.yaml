@@ -35,22 +35,9 @@ workflows:
         script: xcode-project use-profiles
       - name: Build ipa
         script: |
-          set +e
-          xcodebuild -project ios/App/App.xcodeproj -scheme App \
-            -archivePath build/ios/xcarchive/App.xcarchive archive \
-            COMPILER_INDEX_STORE_ENABLE=NO DEVELOPMENT_TEAM=6P757TZ966 \
-            "CODE_SIGN_IDENTITY=Apple Distribution" CODE_SIGN_STYLE=Manual \
-            > /tmp/xcb.log 2>&1
-          RC=$?
-          echo "=== xcodebuild archive exit $RC ==="
-          if [ $RC -ne 0 ]; then
-            echo "=========== signing / error lines ===========";
-            grep -iE "error:|does not|doesn't|entitlement|provisioning|no profile|requires a provisioning|Signing for|no signing|CODE_SIGN|failed" /tmp/xcb.log | tail -60;
-            echo "=========== last 40 lines ===========";
-            tail -40 /tmp/xcb.log;
-            exit 1;
-          fi
-          xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"
+          xcode-project build-ipa \
+            --project "ios/App/App.xcodeproj" \
+            --scheme "App"
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
