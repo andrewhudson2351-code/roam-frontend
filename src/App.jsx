@@ -1792,8 +1792,15 @@ function AnalyticsScreen({ venueId, token, onClose }) {
             </div>
             {selDay && (
               <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", marginTop: 8, borderTop: "1px solid rgba(200,169,110,0.1)", paddingTop: 8 }}>
-                <div style={{ opacity: 0.8 }}>{selDay.day_text} {selDay.date.slice(5)} — {selDay.views} views · {selDay.clicks} deal clicks · {selDay.redemptions} redeemed · {selDay.visits} visits</div>
+                <div style={{ opacity: 0.8 }}>{selDay.day_text} {selDay.date.slice(5)} — {selDay.views} views · {selDay.clicks} deal clicks · {selDay.redemptions} redeemed · {selDay.visits} visits{selDay.est_visitors != null ? ` · ~${selDay.est_visitors} est. guests*` : ""}</div>
                 {selDay.deals.length > 0 && <div style={{ color: C.ivory, marginTop: 3, fontSize: 10 }}>Deals: {selDay.deals.join(", ")}</div>}
+              </div>
+            )}
+            {a.estimated_visitors_7d != null && (
+              <div style={{ marginTop: 10, textAlign: "center" }}>
+                <span style={{ fontSize: 13, color: C.aureus, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>~{a.estimated_visitors_7d.toLocaleString()}</span>
+                <span style={{ fontSize: 10, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif" }}> estimated guests this week*</span>
+                <div style={{ fontSize: 8, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", marginTop: 4, lineHeight: 1.4 }}>*Directional estimate: typical/reported busyness applied to a typical capacity for {a.venue?.category || "similar"} venues — not a measured count.</div>
               </div>
             )}
             <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 10 }}>
