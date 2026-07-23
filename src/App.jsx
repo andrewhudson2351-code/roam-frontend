@@ -2639,6 +2639,25 @@ export default function RoamApp() {
   const currentToken = token || savedToken;
   const [currentCity, setCurrentCity] = useState("Charlotte");
 
+  // First-launch location opt-in: fire the native permission prompt as the
+  // first thing a new user sees and, on grant, enable location sharing so
+  // friend pins / visit counts / map centering work without a Settings trip.
+  // Runs once per device (localStorage guard); denying leaves sharing off and
+  // the Settings toggle remains the override in both directions.
+  useEffect(() => {
+    if (!currentToken || !currentUser || localStorage.getItem("roam_loc_prompted")) return;
+    localStorage.setItem("roam_loc_prompted", "1");
+    if (currentUser.location_sharing || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async () => {
+        const data = await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify({ location_sharing: true }) }, currentToken);
+        if (data && !data.error) { setUser(data); localStorage.setItem("roam_user", JSON.stringify(data)); }
+      },
+      () => {}, // denied — everything stays off, exactly as before
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+    );
+  }, [currentToken]);
+
   // Push notifications (iOS only): register the APNs device token with the
   // backend whenever a logged-in user is present. The plugin is loaded lazily
   // so it never touches the web build.
