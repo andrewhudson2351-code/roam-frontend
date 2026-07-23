@@ -76,6 +76,11 @@ async function apiFetch(path, options = {}, token = null) {
   }
 }
 
+// Fire-and-forget analytics ping; failures never affect the UX.
+function track(type, venueId, dealId, token) {
+  apiFetch("/api/analytics/event", { method: "POST", body: JSON.stringify({ type, venue_id: venueId, deal_id: dealId || null }) }, token);
+}
+
 // Downscale a photo to maxDim and re-encode as JPEG so uploads stay small
 // (iOS camera shots are 12MP+; the stories bucket caps files at 5 MB).
 function compressImage(file, maxDim = 1280, quality = 0.8) {
@@ -233,6 +238,7 @@ function useRedemptions(token) {
   }, [redeemError]);
 
   async function redeem(deal) {
+    track("deal_click", deal.venue_id, deal.id, token);
     const existing = redeemed[deal.id];
     if (existing) { setReceipt({ deal, ...existing }); return; }
     const data = await apiFetch(`/api/deals/${deal.id}/redeem`, { method: "POST" }, token);
@@ -407,6 +413,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
 
   useEffect(() => {
     let stale = false;
+    track("venue_view", venue.id, null, token);
     apiFetch(`/api/venues/${venue.id}`, {}, token).then(d => {
       if (stale) return;
       if (d?.error) setMsg(d.error);
@@ -1507,7 +1514,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
             <div key={d.id} style={{ background: isRedeemed ? "rgba(200,169,110,0.02)" : "rgba(200,169,110,0.05)", borderRadius: 18, padding: 16, border: `1px solid ${isRedeemed ? "rgba(200,169,110,0.06)" : "rgba(200,169,110,0.18)"}`, opacity: isRedeemed ? 0.5 : 1, transition: "all 0.3s" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <div>
-                  <div onClick={() => d.venues && setDetailVenue(d.venues)} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: d.venues ? "pointer" : "default" }}>
+                  <div onClick={() => { if (!d.venues) return; track("deal_click", d.venue_id, d.id, token); setDetailVenue(d.venues); }} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: d.venues ? "pointer" : "default" }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.aureus, boxShadow: `0 0 6px ${C.aureus}` }} />
                     <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{d.venues?.name}{d.venues ? " ›" : ""}</span>
                     {day === today && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
@@ -1529,7 +1536,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <button onClick={() => d.venues && setDetailVenue(d.venues)} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: d.venues ? "pointer" : "default" }}>📍 View venue</button>
+                <button onClick={() => { if (!d.venues) return; track("deal_click", d.venue_id, d.id, token); setDetailVenue(d.venues); }} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: d.venues ? "pointer" : "default" }}>📍 View venue</button>
                 {d.source === "scraped" ? (
                   <span style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid rgba(232,230,225,0.18)", fontSize: 9, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
                 ) : (
@@ -1670,6 +1677,163 @@ function EventsScreen({ token, city, onClaimVenue }) {
   );
 }
 
+// Owner analytics breakout. Hourly chart layers: gray bar = BestTime baseline
+// ("typical"), bright cap = crowd reports running ABOVE typical (position +
+// color both encode it), tick = reports below typical, diamond = owner update.
+function AnalyticsScreen({ venueId, token, onClose }) {
+  const [a, setA] = useState(null);
+  const [err, setErr] = useState(null);
+  const [day, setDay] = useState((new Date().getDay() + 6) % 7); // 0=Mon
+  const [hourSel, setHourSel] = useState(null);
+  const [daySel, setDaySel] = useState(null);
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const GRAY = "#6B7280";
+
+  useEffect(() => {
+    let stale = false;
+    apiFetch(`/api/analytics/venue/${venueId}`, {}, token).then(d => {
+      if (stale) return;
+      if (d?.error) setErr(d.error); else setA(d);
+    });
+    return () => { stale = true; };
+  }, [venueId]);
+
+  const hourLabel = i => { const h = (i + 6) % 24; return `${h % 12 === 0 ? 12 : h % 12}${h >= 12 ? "p" : "a"}`; };
+  const secTitle = { fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 };
+  const card = { background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: "1px solid rgba(200,169,110,0.15)" };
+
+  const selRep = a && hourSel != null ? a.reported[day]?.[hourSel] : null;
+  const selBase = a && hourSel != null ? a.baseline[day]?.[hourSel] : null;
+  const selDay = a && daySel != null ? a.weekly[daySel] : null;
+
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 60, background: C.carbon, overflowY: "auto", padding: "14px 16px 24px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: C.aureus, fontSize: 14, cursor: "pointer", padding: "4px 8px 4px 0", fontFamily: "'EB Garamond', serif" }}>← Back</button>
+        <div style={{ fontSize: 17, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Analytics</div>
+      </div>
+      {err && <div style={{ fontSize: 12, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{err}</div>}
+      {!a && !err && <div style={{ color: C.aureus, fontSize: 13, fontFamily: "'EB Garamond', serif", opacity: 0.6, textAlign: "center", padding: 40 }}>Loading analytics...</div>}
+      {a && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
+            {[["Views", a.totals_7d.views], ["Visits", a.totals_7d.visits], ["Redeemed", a.totals_7d.redemptions], ["Stories", a.totals_7d.stories]].map(([label, v]) => (
+              <div key={label} style={{ background: "rgba(200,169,110,0.04)", borderRadius: 12, padding: "10px 4px", border: "1px solid rgba(200,169,110,0.1)", textAlign: "center" }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.aureus, fontFamily: "'Playfair Display', serif" }}>{v}</div>
+                <div style={{ fontSize: 7, color: C.marble, opacity: 0.4, fontFamily: "sans-serif", letterSpacing: 0.5, marginTop: 2 }}>{label.toUpperCase()} · 7D</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={card}>
+            <div style={secTitle}>Typical vs Reported · by hour</div>
+            <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+              {DAYS.map((d, i) => (
+                <button key={d} onClick={() => { setDay(i); setHourSel(null); }} style={{ padding: "4px 9px", borderRadius: 8, border: `1px solid rgba(200,169,110,${day === i ? "0.6" : "0.15"})`, background: day === i ? "rgba(200,169,110,0.15)" : "transparent", color: C.aureus, fontSize: 10, cursor: "pointer", fontFamily: "sans-serif" }}>{d}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 112 }}>
+              {Array.from({ length: 24 }, (_, i) => {
+                const base = a.baseline[day]?.[i];
+                const rep = a.reported[day]?.[i];
+                const avg = rep?.consumer_avg;
+                const above = avg != null && avg > (base ?? 0);
+                return (
+                  <div key={i} onClick={() => setHourSel(hourSel === i ? null : i)} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", position: "relative", cursor: "pointer", opacity: hourSel == null || hourSel === i ? 1 : 0.4 }}>
+                    {rep?.owner_n > 0 && <div style={{ position: "absolute", top: 0, left: "50%", marginLeft: -3, width: 6, height: 6, background: C.marble, transform: "rotate(45deg)" }} />}
+                    {above && <div style={{ height: Math.max(Math.round((avg - (base ?? 0)) * 0.9), 3), background: C.ivory, borderRadius: "3px 3px 0 0", marginBottom: 2 }} />}
+                    <div style={{ height: Math.max(Math.round((base ?? 0) * 0.9), 2), background: GRAY, opacity: 0.65, borderRadius: above ? 0 : "3px 3px 0 0" }} />
+                    {avg != null && !above && <div style={{ position: "absolute", bottom: Math.round(avg * 0.9), left: 0, right: 0, height: 2, background: C.ivory }} />}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 2, marginTop: 4 }}>
+              {Array.from({ length: 24 }, (_, i) => (
+                <div key={i} style={{ flex: 1, textAlign: "center", fontSize: 7, color: C.marble, opacity: 0.35, fontFamily: "sans-serif" }}>{i % 4 === 0 ? hourLabel(i) : ""}</div>
+              ))}
+            </div>
+            {hourSel != null && (
+              <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", marginTop: 8, textAlign: "center", opacity: 0.8 }}>
+                {hourLabel(hourSel)} — typical {selBase ?? "–"}{selRep?.consumer_avg != null ? ` · reported ${selRep.consumer_avg} (${selRep.consumer_n} report${selRep.consumer_n === 1 ? "" : "s"})` : " · no reports yet"}{selRep?.owner_n > 0 ? ` · ${selRep.owner_n} update${selRep.owner_n === 1 ? "" : "s"} from you` : ""}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 10, flexWrap: "wrap" }}>
+              {[[GRAY, "Typical", false], [C.ivory, "Reported above typical", false], [C.marble, "Your updates", true]].map(([col, label, diamond]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ width: 7, height: 7, background: col, transform: diamond ? "rotate(45deg)" : "none", borderRadius: diamond ? 0 : 2 }} />
+                  <span style={{ fontSize: 8, color: C.marble, opacity: 0.5, fontFamily: "sans-serif" }}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={card}>
+            <div style={secTitle}>Last 7 nights · evening busyness</div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 116 }}>
+              {a.weekly.map((w, i) => {
+                const v = w.evening_busy ?? 0;
+                return (
+                  <div key={w.date} onClick={() => setDaySel(daySel === i ? null : i)} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", position: "relative", cursor: "pointer", opacity: daySel == null || daySel === i ? 1 : 0.4 }}>
+                    {w.delta_pct != null && <div style={{ fontSize: 8, textAlign: "center", marginBottom: 2, fontFamily: "sans-serif", color: w.delta_pct >= 0 ? C.buzzing : GRAY }}>{w.delta_pct > 0 ? "+" : ""}{w.delta_pct}%</div>}
+                    <div style={{ height: Math.max(Math.round(v * 0.82), 2), background: v ? C.aureus : "#3A3A3A", borderRadius: "3px 3px 0 0" }} />
+                    {w.typical_evening != null && <div style={{ position: "absolute", bottom: Math.round(w.typical_evening * 0.82), left: 0, right: 0, height: 2, background: GRAY }} />}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              {a.weekly.map(w => (
+                <div key={w.date} style={{ flex: 1, textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: C.marble, opacity: 0.5, fontFamily: "sans-serif" }}>{w.day_text}</div>
+                  <div style={{ fontSize: 8, color: C.ivory, height: 10 }}>{w.deals.length ? "●" : ""}</div>
+                </div>
+              ))}
+            </div>
+            {selDay && (
+              <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", marginTop: 8, borderTop: "1px solid rgba(200,169,110,0.1)", paddingTop: 8 }}>
+                <div style={{ opacity: 0.8 }}>{selDay.day_text} {selDay.date.slice(5)} — {selDay.views} views · {selDay.clicks} deal clicks · {selDay.redemptions} redeemed · {selDay.visits} visits</div>
+                {selDay.deals.length > 0 && <div style={{ color: C.ivory, marginTop: 3, fontSize: 10 }}>Deals: {selDay.deals.join(", ")}</div>}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 10 }}>
+              {[[C.aureus, "Reported"], [GRAY, "Typical level"]].map(([col, label]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ width: 7, height: label === "Typical level" ? 2 : 7, background: col, borderRadius: 2 }} />
+                  <span style={{ fontSize: 8, color: C.marble, opacity: 0.5, fontFamily: "sans-serif" }}>{label}</span>
+                </div>
+              ))}
+              <span style={{ fontSize: 8, color: C.ivory, opacity: 0.7, fontFamily: "sans-serif" }}>● deal running</span>
+            </div>
+          </div>
+
+          {a.funnel.length > 0 && (
+            <div style={card}>
+              <div style={secTitle}>Deal performance</div>
+              {a.funnel.slice(0, 8).map(f => (
+                <div key={f.deal_id} style={{ padding: "8px 0", borderBottom: "1px solid rgba(200,169,110,0.08)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif" }}>{f.title}</div>
+                    {!f.is_active && <span style={{ fontSize: 8, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>INACTIVE</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", marginTop: 3, opacity: 0.8 }}>
+                    {f.clicks_30d} clicks → {f.redemptions_total} redeemed → {f.confirmed_visits_30d} visit{f.confirmed_visits_30d === 1 ? "" : "s"}{f.saves_total > 0 ? ` · ${f.saves_total} saved` : ""}
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 8, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", marginTop: 8 }}>Clicks & visits are last 30 days; redemptions are all-time.</div>
+            </div>
+          )}
+
+          <div style={{ fontSize: 9, color: C.marble, opacity: 0.35, fontFamily: "'EB Garamond', serif", textAlign: "center", lineHeight: 1.5 }}>
+            Visit counts are anonymous aggregates from Roamers who share their location. Numbers grow as more people use Roam near you.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
   const [venues, setVenues] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -1707,6 +1871,7 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
   const [otpCode, setOtpCode] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [recentRedemptions, setRecentRedemptions] = useState([]);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   useEffect(() => { loadMyVenues(); if (claimRequest) onClaimRequestHandled?.(); }, []);
 
@@ -1995,7 +2160,8 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
   );
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 16px", background: C.mapBg, position: "relative" }}>
+      {showAnalytics && selected && <AnalyticsScreen venueId={selected} token={token} onClose={() => setShowAnalytics(false)} />}
       {dashMsg && (
         <div style={{ background: "rgba(255,45,45,0.08)", border: `1px solid rgba(255,45,45,0.3)`, borderRadius: 12, padding: "8px 12px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, color: "#FF6B6B", fontFamily: "'EB Garamond', serif" }}>{dashMsg}</span>
@@ -2041,6 +2207,10 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
               </div>
             ))}
           </div>
+
+          <button onClick={() => setShowAnalytics(true)} style={{ width: "100%", padding: "11px", borderRadius: 14, border: `1px solid rgba(200,169,110,0.25)`, background: "rgba(200,169,110,0.06)", color: C.aureus, fontSize: 12, cursor: "pointer", fontFamily: "'EB Garamond', serif", marginBottom: 12 }}>
+            📊 View full analytics →
+          </button>
 
           <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
