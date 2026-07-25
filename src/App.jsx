@@ -756,6 +756,13 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState("visitor");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [favIds, setFavIds] = useState(new Set());
+
+  // Refetch favorites when the detail sheet closes — the ♥ may have changed.
+  useEffect(() => {
+    if (detailVenue || !token) return;
+    apiFetch("/api/venues/favorites/mine", {}, token).then(ids => { if (Array.isArray(ids)) setFavIds(new Set(ids)); }).catch(() => {});
+  }, [token, detailVenue]);
   const [venueSearch, setVenueSearch] = useState("");
   const [venueResults, setVenueResults] = useState([]);
   const searchTimerRef = useRef(null);
@@ -950,7 +957,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
     setDetailVenue(v);
   }
 
-  const filters = ["All", "Bar", "Club", "Restaurant"];
+  const filters = ["All", "Bar", "Club", "Restaurant", "♥ Favorites"];
   const cityCenter = CITIES.find(c => c.name === currentCity);
   function sortByMode(list) {
     if (mode === "local" && cityCenter) {
@@ -969,8 +976,9 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   }
   const filtered = useMemo(() => {
     if (dealTag) return sortByMode(dealVenueIds ? venues.filter(v => dealVenueIds.has(v.id)) : []);
+    if (filter === "♥ Favorites") return sortByMode(venues.filter(v => favIds.has(v.id)));
     return sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
-  }, [venues, mode, filter, currentCity, dealTag, dealVenueIds]);
+  }, [venues, mode, filter, currentCity, dealTag, dealVenueIds, favIds]);
   const geojson = useMemo(() => ({
     type: "FeatureCollection",
     features: filtered
@@ -1528,6 +1536,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
   const [detailVenue, setDetailVenue] = useState(null);
   const [search, setSearch] = useState("");
   const [savedDeals, setSavedDeals] = useState(new Set());
+  const [savedOnly, setSavedOnly] = useState(false);
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
   const today = new Date().getDay();
 
@@ -1555,6 +1564,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
 
   const q = search.trim().toLowerCase();
   const visibleDeals = deals
+    .filter(d => !savedOnly || savedDeals.has(d.id))
     .filter(d => !tagFilter || d.tags?.includes(tagFilter))
     .filter(d => !q || (d.title || "").toLowerCase().includes(q) || (d.detail || "").toLowerCase().includes(q) || (d.venues?.name || "").toLowerCase().includes(q));
   // Reorder day chips to start at today, so the default view leads the row
@@ -1574,6 +1584,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+          <button onClick={() => setSavedOnly(s => !s)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${savedOnly ? C.aureus : "rgba(200,169,110,0.2)"}`, background: savedOnly ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: savedOnly ? C.carbon : C.aureus, whiteSpace: "nowrap", fontWeight: savedOnly ? 700 : 400 }}>★ Saved{savedDeals.size > 0 ? ` (${savedDeals.size})` : ""}</button>
           {DEAL_TAGS.map(t => (
             <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", border: `1px solid ${tagFilter === t ? C.aureus : "rgba(200,169,110,0.2)"}`, background: tagFilter === t ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: tagFilter === t ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{t}</button>
           ))}
