@@ -1011,16 +1011,9 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
           );
         })}
       </div>
-      <div style={{ position: "absolute", top: 48, left: 12, zIndex: 10, display: "flex", background: "rgba(14,15,11,0.88)", borderRadius: 20, border: `1px solid rgba(200,169,110,0.25)`, padding: 2, backdropFilter: "blur(8px)" }}>
-        {["local", "visitor"].map(m => (
-          <button key={m} onClick={() => { modeOverrideRef.current = true; setMode(m); }}
-            style={{ padding: "5px 14px", borderRadius: 18, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", fontFamily: "sans-serif",
-              background: mode === m ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent",
-              color: mode === m ? C.carbon : C.aureus }}>
-            {m === "local" ? "Local" : "Visitor"}
-          </button>
-        ))}
-      </div>
+      {/* Local/Visitor mode is auto-set from home_city (see the effect above);
+          the manual toggle was pulled 2026-07-25 until reports give the modes
+          a visible difference — restore this block to bring it back. */}
       <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "5px 10px", border: `1px solid rgba(200,169,110,0.2)`, backdropFilter: "blur(8px)" }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.packed, boxShadow: `0 0 8px ${C.packed}`, opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
