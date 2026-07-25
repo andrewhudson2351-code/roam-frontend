@@ -51,6 +51,7 @@ const CITIES = [
   { name: "Boston",           lat: 42.3601, lng: -71.0589 },
   { name: "Miami",            lat: 25.7617, lng: -80.1918 },
   { name: "Saratoga Springs", lat: 43.0831, lng: -73.7846 },
+  { name: "Asheville",        lat: 35.5951, lng: -82.5515 },
 ];
 
 function getCityFromCoords(lat, lng) {
