@@ -2480,6 +2480,25 @@ function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
   const [deleteError, setDeleteError] = useState(null);
   const [sharing, setSharing] = useState(!!user?.location_sharing);
   const [savingSharing, setSavingSharing] = useState(false);
+  const [notifyDeals, setNotifyDeals] = useState(null); // null = still loading
+  const [savingNotify, setSavingNotify] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    apiFetch("/api/notifications/preferences", {}, token)
+      .then(d => { if (live) setNotifyDeals(!!d?.notify_deals); })
+      .catch(() => { if (live) setNotifyDeals(false); });
+    return () => { live = false; };
+  }, [token]);
+
+  async function toggleNotifyDeals() {
+    if (savingNotify || notifyDeals === null) return;
+    const next = !notifyDeals;
+    setNotifyDeals(next); setSavingNotify(true);
+    const data = await apiFetch("/api/notifications/preferences", { method: "PATCH", body: JSON.stringify({ notify_deals: next }) }, token).catch(() => null);
+    if (!data?.success) setNotifyDeals(!next);
+    setSavingNotify(false);
+  }
 
   async function toggleSharing() {
     if (savingSharing) return;
@@ -2529,6 +2548,19 @@ function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
         </div>
         <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, lineHeight: 1.6 }}>
           Friends can see which venue you're at. Your location updates when you report a crowd level, and disappears after 30 minutes or when you turn this off.
+        </div>
+      </div>
+      <div style={{ background: "rgba(200,169,110,0.06)", borderRadius: 16, padding: 16, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+        <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Notifications</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Deal Alerts & Tips</div>
+          <button onClick={toggleNotifyDeals} disabled={savingNotify || notifyDeals === null} aria-label="Toggle deal alerts"
+            style={{ width: 44, height: 24, borderRadius: 12, border: `1px solid ${notifyDeals ? C.aureus : "rgba(200,169,110,0.25)"}`, cursor: "pointer", padding: 2, background: notifyDeals ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.08)", display: "flex", justifyContent: notifyDeals ? "flex-end" : "flex-start", opacity: savingNotify || notifyDeals === null ? 0.6 : 1, transition: "all 0.2s" }}>
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: notifyDeals ? C.carbon : "rgba(200,169,110,0.5)" }} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: C.marble, fontFamily: "'EB Garamond', serif", opacity: 0.5, lineHeight: 1.6 }}>
+          Occasional pushes about deals around you — Taco Tuesdays, happy hours, and new specials at spots you've visited. Friend requests and check-ins are separate and always on.
         </div>
       </div>
       <div style={{ height: 1, background: "rgba(200,169,110,0.1)", marginBottom: 12 }} />
