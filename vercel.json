@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/v/:id", "destination": "https://roam-backend-production.up.railway.app/share/venue/:id" },
+    { "source": "/d/:id", "destination": "https://roam-backend-production.up.railway.app/share/deal/:id" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

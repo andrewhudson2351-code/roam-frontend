@@ -411,6 +411,10 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
   const [photoIdx, setPhotoIdx] = useState(0);
   const [msg, setMsg] = useState(null);
   const [reported, setReported] = useState(false);
+  const [fav, setFav] = useState(false);
+  const [favCount, setFavCount] = useState(0);
+  const [savedDeals, setSavedDeals] = useState(new Set());
+  const [vibeSel, setVibeSel] = useState([]);
 
   useEffect(() => {
     let stale = false;
@@ -418,10 +422,34 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
     apiFetch(`/api/venues/${venue.id}`, {}, token).then(d => {
       if (stale) return;
       if (d?.error) setMsg(d.error);
-      else if (d) setData(d);
+      else if (d) { setData(d); setFav(!!d.is_favorited); setFavCount(d.favorite_count || 0); }
     });
+    if (token) apiFetch("/api/deals/my-saves", {}, token).then(ids => { if (!stale && Array.isArray(ids)) setSavedDeals(new Set(ids)); }).catch(() => {});
     return () => { stale = true; };
   }, [venue.id]);
+
+  async function toggleFav() {
+    if (!token) return;
+    const next = !fav;
+    setFav(next); setFavCount(c => Math.max(0, c + (next ? 1 : -1)));
+    const r = await apiFetch(`/api/venues/${venue.id}/favorite`, { method: "POST" }, token).catch(() => null);
+    if (typeof r?.favorited !== "boolean") { setFav(!next); setFavCount(c => Math.max(0, c + (next ? -1 : 1))); }
+  }
+
+  async function toggleSaveDeal(id) {
+    const flip = () => setSavedDeals(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    flip();
+    const r = await apiFetch(`/api/deals/${id}/save`, { method: "POST" }, token).catch(() => null);
+    if (typeof r?.saved !== "boolean") flip();
+  }
+
+  async function shareVenue() {
+    const url = `https://app.roaman.app/v/${venue.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: v.name, url });
+      else { await navigator.clipboard.writeText(url); setMsg("Link copied!"); }
+    } catch { /* user dismissed the share sheet */ }
+  }
 
   useEffect(() => {
     if (!msg) return;
@@ -430,7 +458,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
   }, [msg]);
 
   async function report(level) {
-    const result = await apiFetch(`/api/venues/${venue.id}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level }) }, token);
+    const result = await apiFetch(`/api/venues/${venue.id}/crowd`, { method: "POST", body: JSON.stringify({ busy_level: level, vibe_tags: vibeSel }) }, token);
     if (result?.error) { setMsg(result.error); return; }
     setReported(true);
     // Backend rejects with 403 when location_sharing is off; ignore silently
@@ -508,6 +536,13 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
               target="_blank" rel="noreferrer" style={actionBtn}>📸 Insta</a>
           )}
         </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button onClick={toggleFav} aria-label="Toggle favorite"
+            style={{ ...actionBtn, border: `1px solid ${fav ? C.aureus : "rgba(200,169,110,0.25)"}`, background: fav ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.06)", color: fav ? C.carbon : C.aureus, fontWeight: fav ? 700 : 400 }}>
+            {fav ? "♥ Favorited" : "♡ Favorite"}{favCount > 0 ? ` · ${favCount}` : ""}
+          </button>
+          <button onClick={shareVenue} style={actionBtn}>↗ Share</button>
+        </div>
 
         {hoursWeek && (
           <div style={{ marginTop: 18, background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid rgba(200,169,110,0.15)` }}>
@@ -534,6 +569,13 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: getBusyColor(score), boxShadow: `0 0 10px ${getBusyColor(score)}` }} />
             <span style={{ fontSize: 14, color: getBusyColor(score), fontFamily: "sans-serif", letterSpacing: 1, fontWeight: 700 }}>{getBusyLabel(score).toUpperCase()} · {score}%</span>
           </div>
+          {(data?.vibes || []).length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              {data.vibes.map(vb => (
+                <span key={vb.tag} style={{ fontSize: 10, color: C.ivory, background: "rgba(200,169,110,0.1)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 10, padding: "3px 9px", fontFamily: "sans-serif", letterSpacing: 0.5 }}>{vb.tag}{vb.count > 1 ? ` ×${vb.count}` : ""}</span>
+              ))}
+            </div>
+          )}
           {hasTypical && (
             <div style={{ marginTop: 12 }}>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 60 }}>
@@ -553,15 +595,26 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
           {reported ? (
             <div style={{ fontSize: 12, color: C.aureus, fontFamily: "'EB Garamond', serif", padding: "10px 0" }}>✓ Thanks — your report keeps the map live.</div>
           ) : (
-            <div style={{ display: "flex", gap: 8 }}>
-              {[["😴", 20, "Quiet"], ["🙂", 50, "Busy"], ["🔥", 85, "Packed"]].map(([emoji, level, label]) => (
-                <button key={level} onClick={() => report(level)}
-                  style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "rgba(200,169,110,0.06)", cursor: "pointer", fontFamily: "inherit" }}>
-                  <div style={{ fontSize: 22 }}>{emoji}</div>
-                  <div style={{ fontSize: 9, color: C.aureus, marginTop: 4, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{label}</div>
-                </button>
-              ))}
-            </div>
+            <>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                {["Chill", "Buzzing", "Packed", "Line Out The Door", "Live Music", "Dancing"].map(t => {
+                  const on = vibeSel.includes(t);
+                  return (
+                    <button key={t} onClick={() => setVibeSel(s => on ? s.filter(x => x !== t) : s.length < 3 ? [...s, t] : s)}
+                      style={{ padding: "4px 10px", borderRadius: 12, fontSize: 10, fontFamily: "sans-serif", cursor: "pointer", border: `1px solid ${on ? C.aureus : "rgba(200,169,110,0.2)"}`, background: on ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: on ? C.carbon : C.aureus, letterSpacing: 0.5 }}>{t}</button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[["😴", 20, "Quiet"], ["🙂", 50, "Busy"], ["🔥", 85, "Packed"]].map(([emoji, level, label]) => (
+                  <button key={level} onClick={() => report(level)}
+                    style={{ flex: 1, padding: "10px 8px", borderRadius: 12, border: `1px solid rgba(200,169,110,0.2)`, background: "rgba(200,169,110,0.06)", cursor: "pointer", fontFamily: "inherit" }}>
+                    <div style={{ fontSize: 22 }}>{emoji}</div>
+                    <div style={{ fontSize: 9, color: C.aureus, marginTop: 4, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{label}</div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -588,9 +641,26 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
                       ))}
                     </div>
                   )}
+                  <button onClick={() => toggleSaveDeal(d.id)}
+                    style={{ marginTop: 8, borderRadius: 10, padding: "5px 12px", fontSize: 10, fontFamily: "sans-serif", letterSpacing: 0.5, cursor: "pointer", border: `1px solid ${savedDeals.has(d.id) ? C.aureus : "rgba(200,169,110,0.25)"}`, background: savedDeals.has(d.id) ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", color: savedDeals.has(d.id) ? C.carbon : C.aureus, fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>
+                    {savedDeals.has(d.id) ? "★ Saved" : "☆ Save deal"}
+                  </button>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {data && data.is_claimed === false && (
+          <div style={{ marginTop: 20, background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: 14, border: `1px dashed rgba(200,169,110,0.35)` }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Own {v.name}?</div>
+            <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, marginTop: 3, fontFamily: "'EB Garamond', serif", lineHeight: 1.5 }}>
+              Claim it free in about five minutes — post your specials, verify scraped deals, and get a weekly analytics report.
+            </div>
+            <button onClick={() => onClaim?.(v)}
+              style={{ marginTop: 10, padding: "9px 16px", borderRadius: 12, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif" }}>
+              Claim this venue
+            </button>
           </div>
         )}
 
@@ -1457,8 +1527,20 @@ function DealsScreen({ token, city, onClaimVenue }) {
   const [viewMode, setViewMode] = useState("list");
   const [detailVenue, setDetailVenue] = useState(null);
   const [search, setSearch] = useState("");
+  const [savedDeals, setSavedDeals] = useState(new Set());
   const { redeemed, receipt, setReceipt, redeem, redeemError } = useRedemptions(token);
   const today = new Date().getDay();
+
+  useEffect(() => {
+    if (token) apiFetch("/api/deals/my-saves", {}, token).then(ids => { if (Array.isArray(ids)) setSavedDeals(new Set(ids)); }).catch(() => {});
+  }, [token]);
+
+  async function toggleSaveDeal(id) {
+    const flip = () => setSavedDeals(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    flip();
+    const r = await apiFetch(`/api/deals/${id}/save`, { method: "POST" }, token).catch(() => null);
+    if (typeof r?.saved !== "boolean") flip();
+  }
 
   useEffect(() => {
     let stale = false;
@@ -1537,7 +1619,10 @@ function DealsScreen({ token, city, onClaimVenue }) {
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <button onClick={() => { if (!d.venues) return; track("deal_click", d.venue_id, d.id, token); setDetailVenue(d.venues); }} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: d.venues ? "pointer" : "default" }}>📍 View venue</button>
+                <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => { if (!d.venues) return; track("deal_click", d.venue_id, d.id, token); setDetailVenue(d.venues); }} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: d.venues ? "pointer" : "default" }}>📍 View venue</button>
+                  <button onClick={() => toggleSaveDeal(d.id)} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: savedDeals.has(d.id) ? 1 : 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer", fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>{savedDeals.has(d.id) ? "★ Saved" : "☆ Save"}</button>
+                </span>
                 {d.source === "scraped" ? (
                   <span style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid rgba(232,230,225,0.18)", fontSize: 9, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
                 ) : (
@@ -2691,6 +2776,19 @@ export default function RoamApp() {
     );
   }, [currentToken]);
 
+  // Deep links: app.roaman.app/#/v/<venue_id> — share links, and push taps
+  // (which set the hash below). Closing clears the hash so back feels normal.
+  const [linkVenue, setLinkVenue] = useState(null);
+  useEffect(() => {
+    function handleHash() {
+      const m = window.location.hash.match(/^#\/v\/([0-9a-f-]{36})$/i);
+      if (m) setLinkVenue({ id: m[1], name: "" });
+    }
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, []);
+
   // Push notifications (iOS only): register the APNs device token with the
   // backend whenever a logged-in user is present. The plugin is loaded lazily
   // so it never touches the web build.
@@ -2698,7 +2796,7 @@ export default function RoamApp() {
   useEffect(() => { pushTokenRef.current = currentToken; }, [currentToken]);
   useEffect(() => {
     if (!IS_NATIVE || !currentToken) return;
-    let regL, errL;
+    let regL, errL, actL;
     (async () => {
       const { PushNotifications } = await import("@capacitor/push-notifications");
       regL = await PushNotifications.addListener("registration", t => {
@@ -2706,11 +2804,18 @@ export default function RoamApp() {
         if (tok) apiFetch("/api/notifications/register", { method: "POST", body: JSON.stringify({ token: t.value, platform: "ios" }) }, tok).catch(() => {});
       });
       errL = await PushNotifications.addListener("registrationError", e => console.warn("push registrationError", e));
+      // Tap routing: venue-carrying pushes open the venue; themed city
+      // pushes land on the deals tab.
+      actL = await PushNotifications.addListener("pushNotificationActionPerformed", a => {
+        const d = a?.notification?.data || {};
+        if (d.venue_id) window.location.hash = `/v/${d.venue_id}`;
+        else if (["taco_tuesday", "wing_night", "happy_hour", "friday_kickoff", "sunday_brunch", "venue_new_deal", "deal_nearby"].includes(d.type)) setTab("deals");
+      });
       let perm = await PushNotifications.checkPermissions();
       if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") perm = await PushNotifications.requestPermissions();
       if (perm.receive === "granted") await PushNotifications.register();
     })();
-    return () => { regL?.remove?.(); errL?.remove?.(); };
+    return () => { regL?.remove?.(); errL?.remove?.(); actL?.remove?.(); };
   }, [currentToken]);
 
   const tabs = [
@@ -2768,6 +2873,9 @@ export default function RoamApp() {
               {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} claimRequest={claimRequest} onClaimRequestHandled={() => setClaimRequest(null)} />}
               {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
+              {linkVenue && <VenueDetailScreen venue={linkVenue} token={currentToken}
+                onClose={() => { setLinkVenue(null); if (window.location.hash.startsWith("#/v/")) history.replaceState(null, "", window.location.pathname + window.location.search); }}
+                onClaim={v => { setLinkVenue(null); setClaimRequest(v); setTab("dashboard"); }} />}
             </>
           )}
         </div>
