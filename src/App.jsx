@@ -992,11 +992,13 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: C.mapBg }}>
-      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "70%", opacity: dealTag ? 0.45 : 1, transition: "opacity 0.2s" }}>
+      {/* single scrolling line — wrapping would put a second row under the
+          Local/Visitor toggle pinned at top:48 */}
+      <div style={{ position: "absolute", top: 12, left: 12, right: 96, zIndex: 10, display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", opacity: dealTag ? 0.45 : 1, transition: "opacity 0.2s" }}>
         {filters.map(f => {
           const active = filter === f && !dealTag;
           return (
-            <button key={f} onClick={() => { setFilter(f); setDealTag(null); }} style={{ padding: "5px 12px", borderRadius: 20, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: active ? C.carbon : C.aureus, backdropFilter: "blur(8px)" }}>{f}</button>
+            <button key={f} onClick={() => { setFilter(f); setDealTag(null); }} style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "5px 12px", borderRadius: 20, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: active ? C.carbon : C.aureus, backdropFilter: "blur(8px)" }}>{f}</button>
           );
         })}
       </div>
@@ -1554,13 +1556,13 @@ function DealsScreen({ token, city, onClaimVenue }) {
   useEffect(() => {
     let stale = false;
     setLoading(true);
-    apiFetch(`/api/deals?city=${encodeURIComponent(city || "Charlotte")}&day=${day}`).then(data => {
+    apiFetch(`/api/deals?city=${encodeURIComponent(city || "Charlotte")}&day=${savedOnly ? "all" : day}`).then(data => {
       if (stale) return;
       if (Array.isArray(data)) setDeals(data);
       setLoading(false);
     });
     return () => { stale = true; };
-  }, [city, day]);
+  }, [city, day, savedOnly]);
 
   const q = search.trim().toLowerCase();
   const visibleDeals = deals
@@ -1578,7 +1580,7 @@ function DealsScreen({ token, city, onClaimVenue }) {
           <button onClick={() => setViewMode(m => m === "list" ? "map" : "list")} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 16, cursor: "pointer", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(200,169,110,0.06)", color: C.aureus }}>{viewMode === "list" ? "🗺 Map" : "☰ List"}</button>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals or venues..." style={{ width: "100%", boxSizing: "border-box", marginBottom: 10, background: "rgba(200,169,110,0.06)", border: `1px solid rgba(200,169,110,0.2)`, borderRadius: 20, padding: "8px 14px", color: C.marble, fontSize: 16, fontFamily: "'EB Garamond', serif", outline: "none" }} />
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 4 }}>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 4, opacity: savedOnly ? 0.35 : 1, pointerEvents: savedOnly ? "none" : "auto", transition: "opacity 0.2s" }}>
           {dayOrder.map(d => (
             <button key={d} onClick={() => setDay(d)} style={{ flexShrink: 0, padding: "5px 14px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5, border: `1px solid ${day === d ? C.aureus : "rgba(200,169,110,0.2)"}`, background: day === d ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: day === d ? C.carbon : C.aureus, whiteSpace: "nowrap" }}>{d === today ? "Today" : DAY_LABELS[d]}</button>
           ))}
