@@ -757,12 +757,23 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   const [mode, setMode] = useState("visitor");
   const [searchOpen, setSearchOpen] = useState(false);
   const [favIds, setFavIds] = useState(new Set());
+  const [liveDealVenueIds, setLiveDealVenueIds] = useState(new Set());
 
   // Refetch favorites when the detail sheet closes — the ♥ may have changed.
   useEffect(() => {
     if (detailVenue || !token) return;
     apiFetch("/api/venues/favorites/mine", {}, token).then(ids => { if (Array.isArray(ids)) setFavIds(new Set(ids)); }).catch(() => {});
   }, [token, detailVenue]);
+
+  // Venues with a deal live RIGHT NOW (the no-day deals query is live-only);
+  // powers the DEAL NOW badge on the bottom rail. Refreshes with the city.
+  useEffect(() => {
+    let stale = false;
+    apiFetch(`/api/deals?city=${encodeURIComponent(currentCity)}`).then(data => {
+      if (!stale && Array.isArray(data)) setLiveDealVenueIds(new Set(data.map(d => d.venue_id)));
+    }).catch(() => {});
+    return () => { stale = true; };
+  }, [currentCity]);
   const [venueSearch, setVenueSearch] = useState("");
   const [venueResults, setVenueResults] = useState([]);
   const searchTimerRef = useRef(null);
@@ -1122,16 +1133,21 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
       </div>
       {filtered.length > 0 && (
         <div style={{ display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
-          {filtered.slice(0, 8).map(v => (
+          {[...filtered].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0)).slice(0, 8).map(v => (
             <div key={v.id} onClick={() => setDetailVenue(v)}
-              style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
+              style={{ flexShrink: 0, background: "rgba(14,15,11,0.92)", borderRadius: 12, padding: "8px 12px", border: `1px solid ${liveDealVenueIds.has(v.id) ? "rgba(200,169,110,0.5)" : "rgba(200,169,110,0.15)"}`, cursor: "pointer", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.marble, whiteSpace: "nowrap", fontFamily: "'EB Garamond', serif" }}>{v.name}</div>
-              {mode === "local" && (v.report_count || 0) > 0 && (v.busy_score || 0) <= 40 && (
-                <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LOCAL FAVORITE</div>
-              )}
-              {mode === "visitor" && (v.busy_score || 0) >= 60 && (
-                <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>POPULAR</div>
-              )}
+              <div style={{ display: "flex", gap: 4 }}>
+                {liveDealVenueIds.has(v.id) && (
+                  <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>✦ DEAL NOW</div>
+                )}
+                {mode === "local" && (v.report_count || 0) > 0 && (v.busy_score || 0) <= 40 && (
+                  <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LOCAL FAVORITE</div>
+                )}
+                {mode === "visitor" && (v.busy_score || 0) >= 60 && (
+                  <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>POPULAR</div>
+                )}
+              </div>
               <div style={{ fontSize: 9, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
             </div>
           ))}
