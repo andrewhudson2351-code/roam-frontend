@@ -1606,33 +1606,104 @@ function StoriesScreen({ token }) {
   );
 }
 
-// Yelp-style mini map of a set of venues; tapping a pin calls onSelect(venue).
-function VenueMiniMap({ venues, onSelect }) {
-  const pts = useMemo(() => {
-    const seen = new Set();
-    return (venues || []).filter(v => {
-      if (!v || seen.has(v.id) || isNaN(parseFloat(v.latitude)) || isNaN(parseFloat(v.longitude))) return false;
-      seen.add(v.id); return true;
+// Yelp-style split view: a live map with a swipeable tile strip pinned to the
+// bottom. Scrolling a tile flies to + highlights its venue; tapping a pin
+// snaps the strip to that venue's first tile. `items` each carry a `.venues`
+// with lat/lng; renderTile(item, isActive) draws the card; onOpenVenue opens
+// the detail sheet.
+function SplitMapView({ items, renderTile, onOpenVenue, emptyMsg }) {
+  const mapRef = useRef(null);
+  const stripRef = useRef(null);
+  const tileRefs = useRef([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const rafRef = useRef(0);
+
+  // One marker per unique, mappable venue.
+  const venues = useMemo(() => {
+    const seen = new Set(); const out = [];
+    for (const it of items || []) {
+      const v = it.venues;
+      if (!v || seen.has(v.id) || isNaN(parseFloat(v.latitude)) || isNaN(parseFloat(v.longitude))) continue;
+      seen.add(v.id); out.push(v);
+    }
+    return out;
+  }, [items]);
+
+  const activeVenueId = items?.[activeIdx]?.venues?.id;
+
+  // Reset to the first tile whenever the item set changes (filter/day/search).
+  useEffect(() => { setActiveIdx(0); stripRef.current?.scrollTo({ left: 0 }); }, [items]);
+
+  // Fly to the active tile's venue.
+  useEffect(() => {
+    const v = items?.[activeIdx]?.venues;
+    if (v && !isNaN(parseFloat(v.latitude))) {
+      mapRef.current?.flyTo({ center: [parseFloat(v.longitude), parseFloat(v.latitude)], zoom: 14.5, duration: 550 });
+    }
+  }, [activeIdx, items]);
+
+  function onStripScroll() {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const strip = stripRef.current; if (!strip) return;
+      const center = strip.scrollLeft + strip.clientWidth / 2;
+      let best = 0, bestDist = Infinity;
+      tileRefs.current.forEach((el, i) => {
+        if (!el) return;
+        const mid = el.offsetLeft + el.offsetWidth / 2;
+        const d = Math.abs(mid - center);
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      setActiveIdx(prev => (prev === best ? prev : best));
     });
-  }, [venues]);
-  const center = pts.length
-    ? { lat: parseFloat(pts[0].latitude), lng: parseFloat(pts[0].longitude) }
-    : { lat: 35.2271, lng: -80.8431 };
+  }
+
+  function focusVenue(venueId) {
+    const idx = items.findIndex(it => it.venues?.id === venueId);
+    if (idx >= 0) tileRefs.current[idx]?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }
+
+  if (!items || items.length === 0) {
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: C.marble, opacity: 0.4, fontSize: 13, fontFamily: "'EB Garamond', serif", padding: 20, textAlign: "center" }}>{emptyMsg}</div>;
+  }
+  const first = items[0].venues;
+  const center = { lat: parseFloat(first?.latitude) || 35.2271, lng: parseFloat(first?.longitude) || -80.8431 };
+
   return (
-    <div style={{ flex: 1, position: "relative", borderRadius: 16, overflow: "hidden", border: `1px solid rgba(200,169,110,0.18)` }}>
-      <MapboxMap mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-        initialViewState={{ latitude: center.lat, longitude: center.lng, zoom: 12 }}
-        mapStyle="mapbox://styles/mapbox/dark-v11" style={{ position: "absolute", inset: 0 }}>
-        {pts.map(v => (
-          <Marker key={v.id} latitude={parseFloat(v.latitude)} longitude={parseFloat(v.longitude)} anchor="bottom">
-            <div onClick={() => onSelect(v)} style={{ cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ background: "rgba(14,15,11,0.92)", border: `1px solid ${C.aureus}`, borderRadius: 10, padding: "3px 8px", fontSize: 9, color: C.aureus, fontFamily: "'EB Garamond', serif", whiteSpace: "nowrap", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", backdropFilter: "blur(6px)" }}>{v.name}</div>
-              <div style={{ color: C.aureus, fontSize: 12, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>▾</div>
-            </div>
-          </Marker>
-        ))}
+    <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+      <MapboxMap ref={mapRef} mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+        initialViewState={{ latitude: center.lat, longitude: center.lng, zoom: 13.5 }}
+        mapStyle="mapbox://styles/mapbox/dark-v11" style={{ position: "absolute", inset: 0 }}
+        onLoad={e => e.target.resize()}>
+        {venues.map(v => {
+          const active = v.id === activeVenueId;
+          return (
+            <Marker key={v.id} latitude={parseFloat(v.latitude)} longitude={parseFloat(v.longitude)} anchor="bottom">
+              {active ? (
+                <div onClick={() => focusVenue(v.id)} style={{ cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", zIndex: 2 }}>
+                  <div style={{ background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, border: `1px solid ${C.ivory}`, borderRadius: 10, padding: "3px 9px", fontSize: 10, fontWeight: 700, fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", boxShadow: `0 0 14px rgba(200,169,110,0.7)` }}>{v.name}</div>
+                  <div style={{ color: C.aureus, fontSize: 14, lineHeight: 1, textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>▾</div>
+                </div>
+              ) : (
+                <div onClick={() => focusVenue(v.id)} style={{ cursor: "pointer", width: 12, height: 12, borderRadius: "50%", background: C.aureus, border: `2px solid ${C.carbon}`, opacity: 0.75 }} />
+              )}
+            </Marker>
+          );
+        })}
       </MapboxMap>
-      {pts.length === 0 && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: C.marble, opacity: 0.5, fontSize: 12, fontFamily: "'EB Garamond', serif", pointerEvents: "none" }}>Nothing to map here.</div>}
+      <div ref={stripRef} onScroll={onStripScroll}
+        style={{ position: "absolute", bottom: 12, left: 0, right: 0, display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", padding: "0 24px", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+        {items.map((it, i) => (
+          <div key={it.id ?? i} ref={el => (tileRefs.current[i] = el)}
+            onClick={() => { if (i === activeIdx && it.venues) onOpenVenue?.(it.venues); }}
+            style={{ flex: "0 0 calc(100% - 56px)", scrollSnapAlign: "center", cursor: it.venues ? "pointer" : "default",
+              background: "rgba(14,15,11,0.94)", backdropFilter: "blur(10px)", borderRadius: 16,
+              border: `1px solid ${i === activeIdx ? C.aureus : "rgba(200,169,110,0.25)"}`, padding: 14,
+              boxShadow: i === activeIdx ? `0 4px 18px rgba(0,0,0,0.5)` : "0 2px 8px rgba(0,0,0,0.35)", transition: "border-color 0.2s" }}>
+            {renderTile(it, i === activeIdx)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1704,9 +1775,29 @@ function DealsScreen({ token, city, onClaimVenue, onShowOnMap }) {
         </div>
       </div>
       {viewMode === "map" ? (
-        <div style={{ flex: 1, display: "flex", padding: "0 16px 16px" }}>
-          <VenueMiniMap venues={visibleDeals.map(d => d.venues)} onSelect={setDetailVenue} />
-        </div>
+        <SplitMapView
+          items={visibleDeals.filter(d => d.venues && !isNaN(parseFloat(d.venues.latitude)))}
+          onOpenVenue={v => { track("deal_click", v.id, null, token); setDetailVenue(v); }}
+          emptyMsg={`No deals to map ${day === today ? "today" : "on " + DAY_LABELS[day]}.`}
+          renderTile={(d) => (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{d.venues?.name} ›</span>
+                {day === today && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</div>
+              {d.detail && <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.detail}</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                <button onClick={e => { e.stopPropagation(); toggleSaveDeal(d.id); }} style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: C.aureus, opacity: savedDeals.has(d.id) ? 1 : 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer", fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>{savedDeals.has(d.id) ? "★ Saved" : "☆ Save"}</button>
+                {d.source === "scraped" ? (
+                  <span style={{ fontSize: 8, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
+                ) : (
+                  <button onClick={e => { e.stopPropagation(); redeem(d); }} style={{ padding: "6px 16px", borderRadius: 10, border: redeemed[d.id] ? `1px solid rgba(200,169,110,0.4)` : "none", cursor: "pointer", fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 10, letterSpacing: 0.5, background: redeemed[d.id] ? "rgba(200,169,110,0.1)" : d.is_premium_only ? "rgba(200,169,110,0.1)" : `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: redeemed[d.id] || d.is_premium_only ? C.aureus : C.carbon }}>{redeemed[d.id] ? "Receipt" : d.is_premium_only ? "🔒 Premium" : "Redeem"}</button>
+                )}
+              </div>
+            </div>
+          )}
+        />
       ) : (
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px" }}>
       {redeemError && (
@@ -1819,9 +1910,22 @@ function EventsScreen({ token, city, onClaimVenue, onShowOnMap }) {
         </div>
       </div>
       {viewMode === "map" ? (
-        <div style={{ flex: 1, display: "flex", padding: "0 16px 16px" }}>
-          <VenueMiniMap venues={visible.map(e => e.venues)} onSelect={setDetailVenue} />
-        </div>
+        <SplitMapView
+          items={visible.filter(e => e.venues && !isNaN(parseFloat(e.venues.latitude)))}
+          onOpenVenue={v => setDetailVenue(v)}
+          emptyMsg={dayFilter ? "Nothing to map on that day." : "No events to map right now."}
+          renderTile={(e) => (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1 }}>{e.venues?.name} ›</span>
+                {e.is_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>HAPPENING NOW</span>}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{e.title}</div>
+              <div style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", marginTop: 3 }}>{e.recur_days ? "↻ " : ""}{eventScheduleLabel(e)}</div>
+              {e.deals?.length > 0 && <div style={{ fontSize: 9, color: C.aureus, opacity: 0.75, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase", marginTop: 6 }}>✦ {e.deals.length} deal{e.deals.length > 1 ? "s" : ""} at this event</div>}
+            </div>
+          )}
+        />
       ) : (
       <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px" }}>
       {redeemError && (
