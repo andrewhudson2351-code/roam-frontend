@@ -1649,10 +1649,13 @@ function DealsScreen({ token, city, onClaimVenue }) {
   }, [city, day, savedOnly]);
 
   const q = search.trim().toLowerCase();
+  // Live-right-now deals lead the list (stable sort keeps popularity order
+  // within each group); only meaningful when the view includes "now".
   const visibleDeals = deals
     .filter(d => !savedOnly || savedDeals.has(d.id))
     .filter(d => !tagFilter || d.tags?.includes(tagFilter))
-    .filter(d => !q || (d.title || "").toLowerCase().includes(q) || (d.detail || "").toLowerCase().includes(q) || (d.venues?.name || "").toLowerCase().includes(q));
+    .filter(d => !q || (d.title || "").toLowerCase().includes(q) || (d.detail || "").toLowerCase().includes(q) || (d.venues?.name || "").toLowerCase().includes(q))
+    .sort((a, b) => (day === today || savedOnly) ? (b.is_live_now === true) - (a.is_live_now === true) : 0);
   // Reorder day chips to start at today, so the default view leads the row
   const dayOrder = Array.from({ length: 7 }, (_, i) => (today + i) % 7);
 
@@ -2657,6 +2660,111 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
   );
 }
 
+function ProfileScreen({ token, user, onLogout, onUserUpdate }) {
+  const [favs, setFavs] = useState(null);
+  const [saves, setSaves] = useState(null);
+  const [activity, setActivity] = useState(null);
+  const [section, setSection] = useState("favorites");
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    if (!token || showSettings) return;
+    apiFetch("/api/venues/favorites/mine?full=1", {}, token).then(d => setFavs(Array.isArray(d) ? d : []));
+    apiFetch("/api/deals/my-saves?full=1", {}, token).then(d => setSaves(Array.isArray(d) ? d : []));
+    apiFetch("/api/venues/activity/mine", {}, token).then(d => setActivity(Array.isArray(d) ? d : []));
+  }, [token, showSettings]);
+
+  if (showSettings) {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
+        <div style={{ padding: "12px 16px 0" }}>
+          <button onClick={() => setShowSettings(false)} style={{ background: "none", border: "none", color: C.aureus, fontSize: 13, cursor: "pointer", fontFamily: "'EB Garamond', serif", padding: 0 }}>← Back to profile</button>
+        </div>
+        <SettingsScreen token={token} user={user} onLogout={onLogout} onUserUpdate={onUserUpdate} />
+      </div>
+    );
+  }
+
+  const openVenue = id => { if (id) window.location.hash = `/v/${id}`; };
+  const card = { background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid rgba(200,169,110,0.15)`, cursor: "pointer" };
+  const empty = msg => <div style={{ textAlign: "center", color: C.marble, opacity: 0.4, fontSize: 12, fontFamily: "'EB Garamond', serif", padding: 24 }}>{msg}</div>;
+  const counts = { favorites: favs?.length, saves: saves?.length, activity: activity?.length };
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 16, background: C.mapBg }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+        <div style={{ width: 54, height: 54, borderRadius: "50%", flexShrink: 0, background: `linear-gradient(135deg, rgba(200,169,110,0.4), rgba(200,169,110,0.1))`, border: `1.5px solid ${C.aureus}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          {user?.avatar_url
+            ? <img src={user.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontSize: 22, color: C.aureus, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>{(user?.display_name || user?.username || "?")[0].toUpperCase()}</span>}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{user?.display_name || user?.username}</div>
+          <div style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.8 }}>@{user?.username}{user?.home_city ? ` · ${user.home_city}` : ""}</div>
+        </div>
+        <button onClick={() => setShowSettings(true)} aria-label="Settings"
+          style={{ background: "rgba(200,169,110,0.08)", border: `1px solid rgba(200,169,110,0.25)`, borderRadius: 12, padding: "8px 10px", cursor: "pointer", fontSize: 15 }}>⚙️</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[["favorites", "♥ Favorites"], ["saves", "★ Saved"], ["activity", "⚡ Activity"]].map(([id, label]) => (
+          <button key={id} onClick={() => setSection(id)}
+            style={{ flex: 1, padding: "8px 4px", borderRadius: 14, border: `1px solid ${section === id ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", background: section === id ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: section === id ? C.carbon : C.aureus, fontWeight: section === id ? 700 : 400 }}>
+            {label}{counts[id] != null ? ` (${counts[id]})` : ""}
+          </button>
+        ))}
+      </div>
+
+      {section === "favorites" && (
+        favs === null ? empty("Loading...") : favs.length === 0 ? empty("No favorites yet — tap ♥ on any venue.") : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {favs.map(v => (
+              <div key={v.id} style={card} onClick={() => openVenue(v.id)}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{v.name}</div>
+                <div style={{ fontSize: 10, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>{[v.category, v.neighborhood, v.city].filter(Boolean).join(" · ")}</div>
+                {(v.busy_score || 0) > 0 && <div style={{ fontSize: 9, color: getBusyColor(v.busy_score), fontWeight: 700, marginTop: 3, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{getBusyLabel(v.busy_score)} · {v.busy_score}%</div>}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {section === "saves" && (
+        saves === null ? empty("Loading...") : saves.length === 0 ? empty("No saved deals yet — tap ☆ on any deal.") : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {saves.map(d => (
+              <div key={d.id} style={card} onClick={() => openVenue(d.venues?.id || d.venue_id)}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</span>
+                  {d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
+                </div>
+                <div style={{ fontSize: 10, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>{d.venues?.name}{d.venues?.city ? ` · ${d.venues.city}` : ""}</div>
+                <div style={{ fontSize: 10, color: C.aureus, opacity: 0.7, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>{d.recur_days ? `↻ ${recurLabel(d)}` : `Expires ${new Date(d.expires_at).toLocaleDateString()}`}</div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {section === "activity" && (
+        activity === null ? empty("Loading...") : activity.length === 0 ? empty("No reports yet — you're our eyes out here, Roamer.") : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {activity.map((a, i) => (
+              <div key={i} style={{ ...card, cursor: a.venues?.id ? "pointer" : "default" }} onClick={() => openVenue(a.venues?.id)}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{a.venues?.name || "A venue"}</div>
+                <div style={{ fontSize: 10, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>
+                  Reported {a.busy_level}% busy{(a.vibe_tags || []).length ? ` · ${a.vibe_tags.join(", ")}` : ""}
+                </div>
+                <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, marginTop: 2, fontFamily: "sans-serif" }}>{new Date(a.reported_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 function SettingsScreen({ token, user, onLogout, onUserUpdate }) {
   const [deleteStep, setDeleteStep] = useState(0);
   const [deleting, setDeleting] = useState(false);
@@ -2956,7 +3064,7 @@ export default function RoamApp() {
     { id: "deals",     icon: "✦",  label: "Deals" },
     { id: "events",    icon: "🎭", label: "Events" },
     { id: "dashboard", icon: "⊙",  label: "Business" },
-    { id: "settings",  icon: "⚙️", label: "Settings" },
+    { id: "settings",  icon: "👤", label: "Profile" },
   ];
 
   return (
@@ -3005,7 +3113,7 @@ export default function RoamApp() {
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} claimRequest={claimRequest} onClaimRequestHandled={() => setClaimRequest(null)} />}
-              {tab === "settings"  && <SettingsScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
+              {tab === "settings"  && <ProfileScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
               {linkVenue && <VenueDetailScreen venue={linkVenue} token={currentToken}
                 onClose={() => { setLinkVenue(null); if (window.location.hash.startsWith("#/v/")) history.replaceState(null, "", window.location.pathname + window.location.search); }}
                 onClaim={v => { setLinkVenue(null); setClaimRequest(v); setTab("dashboard"); }} />}
