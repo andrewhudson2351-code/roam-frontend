@@ -79,6 +79,7 @@ const CITIES = [
   { name: "Miami",            lat: 25.7617, lng: -80.1918 },
   { name: "Saratoga Springs", lat: 43.0831, lng: -73.7846 },
   { name: "Asheville",        lat: 35.5951, lng: -82.5515 },
+  { name: "Charleston",       lat: 32.7876, lng: -79.9403 },
 ];
 
 function getCityFromCoords(lat, lng) {
@@ -551,7 +552,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
       <div style={{ padding: "16px 18px 90px" }}>
         <div style={{ fontSize: 24, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", lineHeight: 1.15 }}>{v.name}</div>
         <div style={{ fontSize: 12, color: C.aureus, marginTop: 4, fontFamily: "'EB Garamond', serif", opacity: 0.85 }}>
-          {[v.category, v.neighborhood, v.city].filter(Boolean).join(" · ")}
+          {[v.category, v.neighborhood, v.city].filter(Boolean).join(" · ")}{(data?.dog_friendly ?? v.dog_friendly) ? " · 🐕 Dog friendly" : ""}
         </div>
         <div style={{ fontSize: 11, color: C.marble, opacity: 0.5, marginTop: 3, fontFamily: "'EB Garamond', serif" }}>{v.address}</div>
         {description && <div style={{ fontSize: 12, color: C.marble, opacity: 0.7, marginTop: 10, lineHeight: 1.5, fontFamily: "'EB Garamond', serif" }}>{description}</div>}
@@ -1026,7 +1027,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue,
     setDetailVenue(v);
   }
 
-  const filters = ["All", "Bar", "Club", "Restaurant", "♥ Favorites"];
+  const filters = ["All", "Bar", "Club", "Restaurant", "♥ Favorites", "🐕 Dog friendly"];
   const cityCenter = CITIES.find(c => c.name === currentCity);
   function sortByMode(list) {
     if (mode === "local" && cityCenter) {
@@ -1046,6 +1047,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue,
   const filtered = useMemo(() => {
     if (dealTag) return sortByMode(dealVenueIds ? venues.filter(v => dealVenueIds.has(v.id)) : []);
     if (filter === "♥ Favorites") return sortByMode(venues.filter(v => favIds.has(v.id)));
+    if (filter === "🐕 Dog friendly") return sortByMode(venues.filter(v => v.dog_friendly));
     return sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
   }, [venues, mode, filter, currentCity, dealTag, dealVenueIds, favIds]);
   const activeFilterCount = (filter !== "All" ? 1 : 0) + (dealTag ? 1 : 0);
