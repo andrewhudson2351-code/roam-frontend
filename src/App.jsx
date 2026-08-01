@@ -10,6 +10,33 @@ import { API } from "./api";
 
 const IS_NATIVE = Capacitor.isNativePlatform();
 
+// Location via the Capacitor plugin on native — raw navigator.geolocation in
+// a WKWebView re-prompts users who already granted permission. Both helpers
+// resolve the same {coords} shape as the web API.
+async function getCurrentPositionUnified(opts) {
+  if (IS_NATIVE) {
+    const { Geolocation } = await import("@capacitor/geolocation");
+    let perm = await Geolocation.checkPermissions();
+    if (perm.location === "prompt" || perm.location === "prompt-with-rationale") perm = await Geolocation.requestPermissions();
+    if (perm.location !== "granted") throw new Error("location permission denied");
+    return Geolocation.getCurrentPosition(opts);
+  }
+  return new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, opts));
+}
+async function watchPositionUnified(onPos, onErr, opts) {
+  if (IS_NATIVE) {
+    const { Geolocation } = await import("@capacitor/geolocation");
+    let perm = await Geolocation.checkPermissions();
+    if (perm.location === "prompt" || perm.location === "prompt-with-rationale") perm = await Geolocation.requestPermissions();
+    if (perm.location !== "granted") throw new Error("location permission denied");
+    const id = await Geolocation.watchPosition(opts || {}, (pos, err) => { if (err) onErr?.(err); else if (pos) onPos(pos); });
+    return () => Geolocation.clearWatch({ id });
+  }
+  if (!navigator.geolocation) throw new Error("geolocation unavailable");
+  const id = navigator.geolocation.watchPosition(onPos, onErr, opts);
+  return () => navigator.geolocation.clearWatch(id);
+}
+
 const C = {
   aureus:   "#C8A96E",
   ivory:    "#E8D5A3",
@@ -165,10 +192,12 @@ const CIRCLE_LAYER = {
   paint: {
     "circle-radius": ["step", ["get", "busy_score"], 6, 60, 7, 80, 8],
     "circle-color": ["get", "color"],
-    "circle-stroke-color": "#FAFAF8",
-    "circle-stroke-width": 1.5,
+    // green ring = a deal is live at this venue right now (subtler than the
+    // EVENT NOW markers, same signal family)
+    "circle-stroke-color": ["case", ["==", ["get", "live_deal"], 1], "#50DC8C", "#FAFAF8"],
+    "circle-stroke-width": ["case", ["==", ["get", "live_deal"], 1], 2.5, 1.5],
     "circle-opacity": PIN_OPACITY,
-    "circle-stroke-opacity": PIN_OPACITY,
+    "circle-stroke-opacity": ["case", ["==", ["get", "live_deal"], 1], 0.95, PIN_OPACITY],
   },
 };
 
@@ -565,10 +594,17 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
 
         <div style={{ marginTop: 18 }}>
           <div style={sectionLabel}>LIVE BUSYNESS</div>
+          {score === 0 && (data?.report_count || 0) === 0 && !hasTypical ? (
+            <div style={{ background: "rgba(200,169,110,0.06)", border: `1px dashed rgba(200,169,110,0.35)`, borderRadius: 12, padding: "10px 14px" }}>
+              <div style={{ fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>No intel yet</div>
+              <div style={{ fontSize: 11, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>You're our eyes out here, Roamer — drop the first report below.</div>
+            </div>
+          ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: getBusyColor(score), boxShadow: `0 0 10px ${getBusyColor(score)}` }} />
             <span style={{ fontSize: 14, color: getBusyColor(score), fontFamily: "sans-serif", letterSpacing: 1, fontWeight: 700 }}>{getBusyLabel(score).toUpperCase()} · {score}%</span>
           </div>
+          )}
           {(data?.vibes || []).length > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
               {data.vibes.map(vb => (
@@ -749,7 +785,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
 let mapCameraState = null;   // last { latitude, longitude, zoom }
 let hasAutoCentered = false; // whether we've auto-centered on the user this launch
 
-function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue }) {
+function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue, resetKey }) {
   const [venues, setVenues] = useState([]);
   const [filter, setFilter] = useState("All");
   const [detailVenue, setDetailVenue] = useState(null);
@@ -758,6 +794,26 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
   const [searchOpen, setSearchOpen] = useState(false);
   const [favIds, setFavIds] = useState(new Set());
   const [liveDealVenueIds, setLiveDealVenueIds] = useState(new Set());
+  const [uiHidden, setUiHidden] = useState(false); // fade controls while the user pans
+  const [panelOpen, setPanelOpen] = useState(null); // "filters" | "city" | null
+
+  // Re-tapping the Map tab closes whatever overlay is open (friends, venue
+  // sheet, search, panels) — an exit hatch that doesn't require the ✕.
+  useEffect(() => {
+    if (!resetKey) return;
+    setShowFriends(false); setDetailVenue(null); setSearchOpen(false); setPanelOpen(null); setActiveFriend(null);
+  }, [resetKey]);
+
+  // iOS webview can mount the map mid-layout, leaving a cropped canvas in the
+  // top-left corner until something forces a reflow. Nudge resize() after
+  // mount and whenever the page becomes visible again.
+  useEffect(() => {
+    const kick = () => { try { mapRef.current?.resize(); } catch { /* map not ready */ } };
+    const t1 = setTimeout(kick, 300), t2 = setTimeout(kick, 1200);
+    window.addEventListener("resize", kick);
+    document.addEventListener("visibilitychange", kick);
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener("resize", kick); document.removeEventListener("visibilitychange", kick); };
+  }, []);
 
   // Refetch favorites when the detail sheet closes — the ♥ may have changed.
   useEffect(() => {
@@ -835,22 +891,24 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
     else setMapMsg("Turn on Share My Location in Settings to center on you.");
   }
   useEffect(() => {
-    if (!user?.location_sharing || !navigator.geolocation) { setSelfPos(null); return; }
-    const id = navigator.geolocation.watchPosition(
-      p => {
-        const pos = { lat: p.coords.latitude, lng: p.coords.longitude };
-        setSelfPos(pos);
-        centerOnSelf(pos);
-        const now = Date.now();
-        if (now - lastPushRef.current > 60000) {
-          lastPushRef.current = now;
-          apiFetch("/api/friends/location", { method: "PATCH", body: JSON.stringify({ latitude: pos.lat, longitude: pos.lng, last_seen: new Date().toISOString() }) }, token).catch(() => {});
-        }
-      },
-      () => setMapMsg("Couldn't access your location — check Roaman's location permission in device settings."),
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
-    );
-    return () => navigator.geolocation.clearWatch(id);
+    if (!user?.location_sharing) { setSelfPos(null); return; }
+    let cleanup = () => {};
+    let stale = false;
+    const onPos = p => {
+      const pos = { lat: p.coords.latitude, lng: p.coords.longitude };
+      setSelfPos(pos);
+      centerOnSelf(pos);
+      const now = Date.now();
+      if (now - lastPushRef.current > 60000) {
+        lastPushRef.current = now;
+        apiFetch("/api/friends/location", { method: "PATCH", body: JSON.stringify({ latitude: pos.lat, longitude: pos.lng, last_seen: new Date().toISOString() }) }, token).catch(() => {});
+      }
+    };
+    const onErr = () => setMapMsg("Couldn't access your location — check Roaman's location permission in device settings.");
+    watchPositionUnified(onPos, onErr, { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 })
+      .then(stop => { if (stale) stop(); else cleanup = stop; })
+      .catch(onErr);
+    return () => { stale = true; cleanup(); };
   }, [user?.location_sharing]);
 
   useEffect(() => {
@@ -990,6 +1048,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
     if (filter === "♥ Favorites") return sortByMode(venues.filter(v => favIds.has(v.id)));
     return sortByMode(filter === "All" ? venues : venues.filter(v => v.category === filter));
   }, [venues, mode, filter, currentCity, dealTag, dealVenueIds, favIds]);
+  const activeFilterCount = (filter !== "All" ? 1 : 0) + (dealTag ? 1 : 0);
   const geojson = useMemo(() => ({
     type: "FeatureCollection",
     features: filtered
@@ -997,42 +1056,60 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
       .map(v => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [parseFloat(v.longitude), parseFloat(v.latitude)] },
-        properties: { id: v.id, busy_score: v.busy_score || 0, color: getBusyColor(v.busy_score || 0) },
+        properties: { id: v.id, busy_score: v.busy_score || 0, color: getBusyColor(v.busy_score || 0), live_deal: liveDealVenueIds.has(v.id) ? 1 : 0 },
       })),
-  }), [filtered]);
+  }), [filtered, liveDealVenueIds]);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: C.mapBg }}>
-      {/* single scrolling line — wrapping would put a second row under the
-          Local/Visitor toggle pinned at top:48 */}
-      <div style={{ position: "absolute", top: 12, left: 12, right: 96, zIndex: 10, display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", opacity: dealTag ? 0.45 : 1, transition: "opacity 0.2s" }}>
-        {filters.map(f => {
-          const active = filter === f && !dealTag;
-          return (
-            <button key={f} onClick={() => { setFilter(f); setDealTag(null); }} style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "5px 12px", borderRadius: 20, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: active ? C.carbon : C.aureus, backdropFilter: "blur(8px)" }}>{f}</button>
-          );
-        })}
+      {/* condensed controls: one Filters button + one City button; the old
+          category and deal-tag chip rows live inside the Filters sheet now */}
+      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", gap: 6, opacity: uiHidden ? 0 : 1, pointerEvents: uiHidden ? "none" : "auto", transition: "opacity 0.25s" }}>
+        <button onClick={() => setPanelOpen(p => p === "filters" ? null : "filters")}
+          style={{ padding: "6px 13px", borderRadius: 20, border: `1px solid ${activeFilterCount || panelOpen === "filters" ? C.aureus : "rgba(200,169,110,0.25)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: activeFilterCount ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: activeFilterCount ? C.carbon : C.aureus, backdropFilter: "blur(8px)", fontWeight: activeFilterCount ? 700 : 400 }}>
+          ⚙ Filters{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+        </button>
+        <button onClick={() => setPanelOpen(p => p === "city" ? null : "city")}
+          style={{ padding: "6px 13px", borderRadius: 20, border: `1px solid ${panelOpen === "city" ? C.aureus : "rgba(200,169,110,0.25)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: "rgba(14,15,11,0.88)", color: C.aureus, backdropFilter: "blur(8px)" }}>
+          🏛 {currentCity}
+        </button>
       </div>
-      {/* right: 88 keeps the scrolling chips from sliding under the 👥 Friends pill */}
-      <div style={{ position: "absolute", top: 84, left: 0, right: 88, zIndex: 10, display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
-        {DEAL_TAGS.map(t => {
-          const active = dealTag === t;
-          return (
-            <button key={t} onClick={() => setDealTag(cur => cur === t ? null : t)} style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 20, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.25)"}`, cursor: "pointer", fontSize: 10, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: active ? C.carbon : C.aureus, backdropFilter: "blur(8px)", whiteSpace: "nowrap", boxShadow: active ? `0 0 10px rgba(200,169,110,0.5)` : "none" }}>✦ {t}</button>
-          );
-        })}
-      </div>
+      {panelOpen === "filters" && (
+        <div style={{ position: "absolute", left: 12, right: 12, bottom: 120, zIndex: 25, background: "rgba(14,15,11,0.97)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 16, padding: 14, backdropFilter: "blur(10px)", maxHeight: "55%", overflowY: "auto" }}>
+          <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, marginBottom: 8 }}>CATEGORY</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {filters.map(f => {
+              const active = filter === f && !dealTag;
+              return (
+                <button key={f} onClick={() => { setFilter(f); setDealTag(null); setPanelOpen(null); }} style={{ padding: "6px 12px", borderRadius: 16, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: active ? C.carbon : C.aureus }}>{f}</button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, margin: "12px 0 8px" }}>LIVE DEALS</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {DEAL_TAGS.map(t => {
+              const active = dealTag === t;
+              return (
+                <button key={t} onClick={() => { setDealTag(cur => cur === t ? null : t); setPanelOpen(null); }} style={{ padding: "6px 12px", borderRadius: 16, border: `1px solid ${active ? C.aureus : "rgba(200,169,110,0.2)"}`, cursor: "pointer", fontSize: 11, fontFamily: "'EB Garamond', serif", background: active ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: active ? C.carbon : C.aureus }}>✦ {t}</button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {panelOpen === "city" && (
+        <div style={{ position: "absolute", left: 12, right: 12, bottom: 120, zIndex: 25, background: "rgba(14,15,11,0.97)", border: `1px solid rgba(200,169,110,0.3)`, borderRadius: 16, padding: "8px 0", backdropFilter: "blur(10px)", maxHeight: "55%", overflowY: "auto" }}>
+          {CITIES.map(c => (
+            <div key={c.name} onClick={() => { goToCity(c.name); setPanelOpen(null); }}
+              style={{ padding: "11px 16px", cursor: "pointer", fontSize: 13, fontFamily: "'EB Garamond', serif", color: currentCity === c.name ? C.carbon : C.marble, background: currentCity === c.name ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", fontWeight: currentCity === c.name ? 700 : 400 }}>
+              {c.name}
+            </div>
+          ))}
+        </div>
+      )}
       {/* Local/Visitor mode is auto-set from home_city (see the effect above);
           the manual toggle was pulled 2026-07-25 until reports give the modes
           a visible difference — restore this block to bring it back. */}
-      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(14,15,11,0.88)", borderRadius: 20, padding: "5px 10px", border: `1px solid rgba(200,169,110,0.2)`, backdropFilter: "blur(8px)" }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.packed, boxShadow: `0 0 8px ${C.packed}`, opacity: pulse ? 1 : 0.3, transition: "opacity 0.5s" }} />
-          <span style={{ fontSize: 9, color: C.marble, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 1.5 }}>LIVE</span>
-        </div>
-        <div style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.15)` }}>
-          <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>{currentCity}</span>
-        </div>
+      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, opacity: uiHidden ? 0 : 1, pointerEvents: uiHidden ? "none" : "auto", transition: "opacity 0.25s" }}>
         <button onClick={() => setShowFriends(true)}
           style={{ background: "rgba(14,15,11,0.88)", borderRadius: 12, padding: "4px 10px", backdropFilter: "blur(8px)", border: `1px solid rgba(200,169,110,0.25)`, cursor: "pointer" }}>
           <span style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>👥 Friends</span>
@@ -1069,8 +1146,9 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
           initialViewState={mapCameraState || { latitude: cityCenter?.lat ?? 35.2271, longitude: cityCenter?.lng ?? -80.8431, zoom: 14 }}
           mapStyle="mapbox://styles/mapbox/dark-v11"
           style={{ position: "absolute", inset: 0 }}
-          onLoad={() => { loadVenues(); if (selfPos) centerOnSelf(selfPos); }}
-          onMoveEnd={handleMoveEnd}
+          onLoad={e => { e.target.resize(); loadVenues(); if (selfPos) centerOnSelf(selfPos); }}
+          onMoveStart={e => { if (e.originalEvent) { setUiHidden(true); setPanelOpen(null); } }}
+          onMoveEnd={e => { setUiHidden(false); handleMoveEnd(e); }}
           onClick={handleMapClick}
           interactiveLayerIds={["venue-points"]}
         >
@@ -1124,13 +1202,8 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
           <span style={{ color: C.aureus, fontSize: 11, fontFamily: "'EB Garamond', serif" }}>No {dealTag} deals here right now</span>
         </div>
       )}
-      {/* City chips and venue cards stack in one column so taller cards (POPULAR/LOCAL FAVORITE badge) can't slide under the chips */}
-      <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", gap: 6, padding: "0 12px", overflowX: "auto" }}>
-        {CITIES.map(c => (
-          <button key={c.name} onClick={() => goToCity(c.name)} style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 12, border: `1px solid ${currentCity === c.name ? C.aureus : "rgba(200,169,110,0.15)"}`, cursor: "pointer", background: currentCity === c.name ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(14,15,11,0.88)", color: currentCity === c.name ? C.carbon : C.marble, fontSize: 9, fontFamily: "'EB Garamond', serif", backdropFilter: "blur(8px)" }}>{c.name.split(",")[0]}</button>
-        ))}
-      </div>
+      {/* city chips moved into the 🏛 city jumper sheet; only the venue rail lives down here now */}
+      <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, zIndex: 10, display: "flex", flexDirection: "column", gap: 6, opacity: uiHidden ? 0 : 1, pointerEvents: uiHidden ? "none" : "auto", transition: "opacity 0.25s" }}>
       {filtered.length > 0 && (
         <div style={{ display: "flex", gap: 8, padding: "0 12px", overflowX: "auto" }}>
           {[...filtered].sort((a, b) => (b.busy_score || 0) - (a.busy_score || 0)).slice(0, 8).map(v => (
@@ -1148,7 +1221,9 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue 
                   <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>POPULAR</div>
                 )}
               </div>
-              <div style={{ fontSize: 9, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>
+              {(v.busy_score || 0) === 0 && (v.report_count || 0) === 0
+                ? <div style={{ fontSize: 9, color: C.aureus, opacity: 0.55, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>NO INTEL YET — TAP TO SCOUT</div>
+                : <div style={{ fontSize: 9, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>}
             </div>
           ))}
         </div>
@@ -2743,8 +2818,31 @@ function OwnedVenueRoute({ user, getToken, Component }) {
   return <Component user={user} getToken={getToken} venue={venue} />;
 }
 
+const APP_STORE_URL = "https://apps.apple.com/us/app/roaman/id6787276961";
+
+// Sticker/QR traffic lands on the web app; iOS web visitors get a nudge to
+// the App Store (Safari also shows the native Smart App Banner via the
+// apple-itunes-app meta). Dismissal sticks per device.
+function AppStoreBanner() {
+  const [hidden, setHidden] = useState(() =>
+    IS_NATIVE || localStorage.getItem("roam_asb_dismissed") === "1" || !/iPhone|iPad|iPod/i.test(navigator.userAgent));
+  if (hidden) return null;
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "rgba(14,15,11,0.97)", borderBottom: "1px solid rgba(200,169,110,0.35)" }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>Roaman is better in the app</div>
+        <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>Deal alerts, friends & check-ins</div>
+      </div>
+      <a href={APP_STORE_URL} style={{ background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 11, borderRadius: 12, padding: "7px 12px", textDecoration: "none", fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>Get the app</a>
+      <button onClick={() => { localStorage.setItem("roam_asb_dismissed", "1"); setHidden(true); }} aria-label="Dismiss"
+        style={{ background: "none", border: "none", color: C.marble, opacity: 0.6, fontSize: 14, cursor: "pointer", padding: 4 }}>✕</button>
+    </div>
+  );
+}
+
 export default function RoamApp() {
   const [tab, setTab] = useState("map");
+  const [tabResetKey, setTabResetKey] = useState(0); // re-tapping the active tab closes its overlays
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [claimRequest, setClaimRequest] = useState(null);
@@ -2782,20 +2880,32 @@ export default function RoamApp() {
   // First-launch location opt-in: fire the native permission prompt as the
   // first thing a new user sees and, on grant, enable location sharing so
   // friend pins / visit counts / map centering work without a Settings trip.
-  // Runs once per device (localStorage guard); denying leaves sharing off and
-  // the Settings toggle remains the override in both directions.
+  // On native the OS permission state is the source of truth (never re-prompt
+  // someone who already granted or denied); localStorage is the web fallback.
   useEffect(() => {
-    if (!currentToken || !currentUser || localStorage.getItem("roam_loc_prompted")) return;
-    localStorage.setItem("roam_loc_prompted", "1");
-    if (currentUser.location_sharing || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async () => {
+    if (!currentToken || !currentUser || currentUser.location_sharing) return;
+    (async () => {
+      if (IS_NATIVE) {
+        const { Geolocation } = await import("@capacitor/geolocation");
+        const perm = await Geolocation.checkPermissions().catch(() => null);
+        if (!perm) return;
+        if (perm.location === "granted") {
+          // Already granted at the OS level — just flip the app flag, no dialog.
+          const data = await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify({ location_sharing: true }) }, currentToken);
+          if (data && !data.error) { setUser(data); localStorage.setItem("roam_user", JSON.stringify(data)); }
+          return;
+        }
+        if (perm.location !== "prompt" && perm.location !== "prompt-with-rationale") return; // denied — respect it, never nag
+      } else if (localStorage.getItem("roam_loc_prompted") || !navigator.geolocation) {
+        return;
+      }
+      localStorage.setItem("roam_loc_prompted", "1");
+      try {
+        await getCurrentPositionUnified({ enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 });
         const data = await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify({ location_sharing: true }) }, currentToken);
         if (data && !data.error) { setUser(data); localStorage.setItem("roam_user", JSON.stringify(data)); }
-      },
-      () => {}, // denied — everything stays off, exactly as before
-      { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
-    );
+      } catch { /* denied — everything stays off, exactly as before */ }
+    })();
   }, [currentToken]);
 
   // Deep links: app.roaman.app/#/v/<venue_id> — share links, and push taps
@@ -2887,9 +2997,10 @@ export default function RoamApp() {
           </div>
         )}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <AppStoreBanner />
           {!currentUser ? <AuthScreen onAuth={handleAuth} /> : (
             <>
-              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
+              {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} resetKey={tabResetKey} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
               {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
@@ -2904,7 +3015,7 @@ export default function RoamApp() {
         {currentUser && (
           <div style={{ padding: "10px 8px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))", display: "flex", background: "rgba(14,15,11,0.97)", borderTop: `1px solid rgba(200,169,110,0.12)`, flexShrink: 0 }}>
             {tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>
+              <button key={t.id} onClick={() => { if (tab === t.id) setTabResetKey(k => k + 1); else setTab(t.id); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>
                 <div style={{ fontSize: 18, opacity: tab === t.id ? 1 : 0.25 }}>{t.icon}</div>
                 <span style={{ fontSize: 8, fontFamily: "sans-serif", color: tab === t.id ? C.aureus : C.marble, letterSpacing: 1, textTransform: "uppercase", opacity: tab === t.id ? 1 : 0.3 }}>{t.label}</span>
                 {tab === t.id && <div style={{ width: 4, height: 4, borderRadius: "50%", background: C.aureus }} />}
