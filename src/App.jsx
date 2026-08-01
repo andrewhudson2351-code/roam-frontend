@@ -435,7 +435,7 @@ function ResetPasswordScreen() {
 
 const HOUR_MARKS = [[0, "6am"], [6, "12pm"], [12, "6pm"], [18, "12am"]];
 
-function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
+function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowOnMap }) {
   const [data, setData] = useState(null);
   const [weekOpen, setWeekOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -573,6 +573,10 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
           </button>
           <button onClick={shareVenue} style={actionBtn}>↗ Share</button>
         </div>
+        {onShowOnMap && !isNaN(parseFloat(v.latitude)) && (
+          <button onClick={() => onShowOnMap({ lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) })}
+            style={{ ...actionBtn, width: "100%", marginTop: 8, boxSizing: "border-box" }}>📍 Show on map</button>
+        )}
 
         {hoursWeek && (
           <div style={{ marginTop: 18, background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid rgba(200,169,110,0.15)` }}>
@@ -784,6 +788,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim }) {
 // on a full app reload: the map keeps its position across tabs, and we only
 // auto-center on the user once per app launch.
 let mapCameraState = null;   // last { latitude, longitude, zoom }
+let pendingMapFocus = null;  // { lat, lng } to fly to when the Map tab next mounts ("Show on map")
 let hasAutoCentered = false; // whether we've auto-centered on the user this launch
 
 function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue, resetKey }) {
@@ -804,6 +809,23 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue,
     if (!resetKey) return;
     setShowFriends(false); setDetailVenue(null); setSearchOpen(false); setPanelOpen(null); setActiveFriend(null);
   }, [resetKey]);
+
+  // "Show on map" from another tab set pendingMapFocus, then switched here.
+  // Fly to it once the map is ready (poll briefly since onLoad may have fired).
+  function flyToFocus(target) {
+    if (!target || isNaN(target.lat)) return;
+    mapRef.current?.flyTo({ center: [target.lng, target.lat], zoom: 16 });
+  }
+  useEffect(() => {
+    if (!pendingMapFocus) return;
+    const target = pendingMapFocus;
+    pendingMapFocus = null;
+    let tries = 0;
+    const iv = setInterval(() => {
+      if (mapRef.current?.isStyleLoaded?.() || tries++ > 20) { clearInterval(iv); flyToFocus(target); }
+    }, 150);
+    return () => clearInterval(iv);
+  }, []);
 
   // iOS webview can mount the map mid-layout, leaving a cropped canvas in the
   // top-left corner until something forces a reflow. Nudge resize() after
@@ -1240,7 +1262,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue,
           <button onClick={() => setActiveFriend(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.aureus, fontSize: 14 }}>✕</button>
         </div>
       )}
-      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues()} onClaim={onClaimVenue} />}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onReported={() => loadVenues()} onClaim={onClaimVenue} onShowOnMap={t => { setDetailVenue(null); flyToFocus(t); }} />}
       {showFriends && <FriendsScreen token={token} onClose={() => setShowFriends(false)} />}
     </div>
   );
@@ -1615,7 +1637,7 @@ function VenueMiniMap({ venues, onSelect }) {
   );
 }
 
-function DealsScreen({ token, city, onClaimVenue }) {
+function DealsScreen({ token, city, onClaimVenue, onShowOnMap }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
@@ -1739,13 +1761,13 @@ function DealsScreen({ token, city, onClaimVenue }) {
       </div>
       </div>
       )}
-      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onClaim={onClaimVenue} />}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onClaim={onClaimVenue} onShowOnMap={onShowOnMap && (t => { setDetailVenue(null); onShowOnMap(t); })} />}
       {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }
 
-function EventsScreen({ token, city, onClaimVenue }) {
+function EventsScreen({ token, city, onClaimVenue, onShowOnMap }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dayFilter, setDayFilter] = useState(null);
@@ -1859,7 +1881,7 @@ function EventsScreen({ token, city, onClaimVenue }) {
       </div>
       </div>
       )}
-      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onClaim={onClaimVenue} />}
+      {detailVenue && <VenueDetailScreen venue={detailVenue} token={token} onClose={() => setDetailVenue(null)} onClaim={onClaimVenue} onShowOnMap={onShowOnMap && (t => { setDetailVenue(null); onShowOnMap(t); })} />}
       {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
@@ -3112,12 +3134,13 @@ export default function RoamApp() {
             <>
               {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} resetKey={tabResetKey} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
               {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
-              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
-              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
+              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} onShowOnMap={t => { pendingMapFocus = t; setTab("map"); }} />}
+              {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} onShowOnMap={t => { pendingMapFocus = t; setTab("map"); }} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} claimRequest={claimRequest} onClaimRequestHandled={() => setClaimRequest(null)} />}
               {tab === "settings"  && <ProfileScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
               {linkVenue && <VenueDetailScreen venue={linkVenue} token={currentToken}
                 onClose={() => { setLinkVenue(null); if (window.location.hash.startsWith("#/v/")) history.replaceState(null, "", window.location.pathname + window.location.search); }}
+                onShowOnMap={t => { pendingMapFocus = t; setLinkVenue(null); setTab("map"); }}
                 onClaim={v => { setLinkVenue(null); setClaimRequest(v); setTab("dashboard"); }} />}
             </>
           )}
