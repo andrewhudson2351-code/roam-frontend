@@ -30,6 +30,8 @@
 	<string>Roaman uses your camera for profile photos</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Roaman uses your location to show nearby venues, let friends you&apos;ve added see you on the map, and count anonymous venue visits.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Roaman uses your location only while the app is open — to show nearby venues, let friends you&apos;ve added see you on the map, and count anonymous venue visits. It does not track your location in the background.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
