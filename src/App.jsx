@@ -1570,7 +1570,7 @@ function StoriesScreen({ token }) {
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 14, color: C.marble, fontFamily: "'EB Garamond', serif", fontStyle: "italic", marginBottom: 10 }}>"{active.caption}"</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>{active.is_anonymous ? "Anonymous" : active.users?.display_name || "Roamer"} · {timeAgo(active.created_at)}</div>
+                <div style={{ fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif", opacity: 0.7 }}>{active.posted_as_venue ? `✓ ${active.venues?.name || "Venue"} (verified venue)` : active.is_anonymous ? "Anonymous" : active.users?.display_name || "Roamer"} · {timeAgo(active.created_at)}</div>
                 <button onClick={() => toggleLike(active.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>
                   {liked[active.id] ? "❤️" : "🤍"} <span style={{ fontSize: 10, color: C.aureus }}>{active.like_count + (liked[active.id] ? 1 : 0)}</span>
                 </button>
@@ -1593,11 +1593,14 @@ function StoriesScreen({ token }) {
             )}
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{s.venues?.name || "A venue"}</span>
-                <span style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.6 }}>{timeAgo(s.created_at)}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.venues?.name || "A venue"}</span>
+                  {s.posted_as_venue && <span style={{ flexShrink: 0, fontSize: 7, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 5, padding: "1px 5px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>✓ VENUE</span>}
+                </span>
+                <span style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.6, flexShrink: 0 }}>{timeAgo(s.created_at)}</span>
               </div>
               <div style={{ fontSize: 12, color: C.marble, fontFamily: "'EB Garamond', serif", fontStyle: "italic", marginBottom: 4, opacity: 0.8 }}>"{s.caption}"</div>
-              <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.5 }}>by {s.is_anonymous ? "Anonymous" : s.users?.display_name || "Roamer"} · {liked[s.id] ? "❤️" : "🤍"} {s.like_count + (liked[s.id] ? 1 : 0)}</div>
+              <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", opacity: 0.5 }}>by {s.posted_as_venue ? "the venue" : s.is_anonymous ? "Anonymous" : s.users?.display_name || "Roamer"} · {liked[s.id] ? "❤️" : "🤍"} {s.like_count + (liked[s.id] ? 1 : 0)}</div>
             </div>
           </div>
         ))}
@@ -2170,6 +2173,9 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
   const [linkedDealIds, setLinkedDealIds] = useState([]);
   const [postingEvent, setPostingEvent] = useState(false);
   const [eventMsg, setEventMsg] = useState(null);
+  const [newStory, setNewStory] = useState({ caption: "", emoji: "", image: "" });
+  const [postingStory, setPostingStory] = useState(false);
+  const [storyMsg, setStoryMsg] = useState(null);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -2338,6 +2344,17 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
     setLinkedDealIds([]);
     setEventMode("once");
     setTimeout(() => setEventMsg(null), 4000);
+  }
+
+  async function postStory() {
+    if (!newStory.caption.trim()) return setStoryMsg("Write something to post.");
+    setPostingStory(true); setStoryMsg(null);
+    const r = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selected, caption: newStory.caption.trim(), emoji: newStory.emoji || "📢", media_url: newStory.image.trim() || null, as_venue: true }) }, token);
+    setPostingStory(false);
+    if (r?.error) return setStoryMsg(r.error);
+    setNewStory({ caption: "", emoji: "", image: "" });
+    setStoryMsg("Posted — your story is live in the feed for 28 hours ✓");
+    setTimeout(() => setStoryMsg(null), 5000);
   }
 
   async function toggleBoost(enable) {
@@ -2725,6 +2742,27 @@ function DashboardScreen({ token, user, claimRequest, onClaimRequestHandled }) {
                 </div>
               )}
               <button onClick={postEvent} disabled={postingEvent} style={{ padding: "10px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>{postingEvent ? "Posting..." : "Post Event 🎭"}</button>
+            </div>
+          </div>
+
+          <div style={{ background: "rgba(200,169,110,0.04)", borderRadius: 16, padding: 14, marginBottom: 12, border: `1px solid rgba(200,169,110,0.15)` }}>
+            <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Post a Story</div>
+            <div style={{ fontSize: 10, color: C.marble, opacity: 0.5, fontFamily: "'EB Garamond', serif", marginBottom: 8 }}>Share what's happening right now — posts as {dash.venue?.name || "your venue"} with a ✓ badge and shows in the Stories feed for 28 hours.</div>
+            {storyMsg && (
+              <div style={{ background: "rgba(46,204,113,0.08)", border: `1px solid rgba(46,204,113,0.3)`, borderRadius: 10, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: C.buzzing, fontFamily: "'EB Garamond', serif" }}>{storyMsg}</div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <textarea value={newStory.caption} onChange={e => setNewStory(s => ({ ...s, caption: e.target.value }))} placeholder="e.g. Live jazz starting at 9 — patio's open!" rows={2} style={{ ...inputStyle, resize: "none", fontFamily: "'EB Garamond', serif" }} />
+              <div>
+                <div style={{ fontSize: 9, color: C.aureus, fontFamily: "sans-serif", letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>Emoji</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {["📢", "🎉", "🔥", "🍸", "🎶", "✨", "🌮", "🍺"].map(em => (
+                    <button key={em} onClick={() => setNewStory(s => ({ ...s, emoji: s.emoji === em ? "" : em }))} style={{ fontSize: 18, padding: "4px 8px", borderRadius: 10, cursor: "pointer", border: `1px solid ${newStory.emoji === em ? C.aureus : "rgba(200,169,110,0.2)"}`, background: newStory.emoji === em ? "rgba(200,169,110,0.15)" : "transparent" }}>{em}</button>
+                  ))}
+                </div>
+              </div>
+              <input value={newStory.image} onChange={e => setNewStory(s => ({ ...s, image: e.target.value }))} type="url" placeholder="Image URL (optional)" style={inputStyle} />
+              <button onClick={postStory} disabled={postingStory} style={{ padding: "10px", borderRadius: 10, border: "none", background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, color: C.carbon, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Playfair Display', serif", letterSpacing: 0.5 }}>{postingStory ? "Posting..." : "Post as Venue ✓"}</button>
             </div>
           </div>
 
