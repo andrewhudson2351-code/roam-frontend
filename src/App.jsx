@@ -599,7 +599,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
 
         <div style={{ marginTop: 18 }}>
           <div style={sectionLabel}>LIVE BUSYNESS</div>
-          {score === 0 && (data?.report_count || 0) === 0 && !hasTypical ? (
+          {data && data.has_baseline === false && score === 0 && (data?.report_count || 0) === 0 ? (
             <div style={{ background: "rgba(200,169,110,0.06)", border: `1px dashed rgba(200,169,110,0.35)`, borderRadius: 12, padding: "10px 14px" }}>
               <div style={{ fontSize: 13, color: C.marble, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>No intel yet</div>
               <div style={{ fontSize: 11, color: C.aureus, marginTop: 2, fontFamily: "'EB Garamond', serif" }}>You're our eyes out here, Roamer — drop the first report below.</div>
@@ -773,7 +773,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
       </div>
       </div>
 
-      <button onClick={onClose} style={{ position: "absolute", top: 14, left: 14, zIndex: 40, width: 34, height: 34, borderRadius: "50%", border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(14,15,11,0.85)", color: C.aureus, fontSize: 16, cursor: "pointer", backdropFilter: "blur(8px)" }}>←</button>
+      <button onClick={onClose} style={{ position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 14px)", left: 14, zIndex: 40, width: 34, height: 34, borderRadius: "50%", border: `1px solid rgba(200,169,110,0.35)`, background: "rgba(14,15,11,0.85)", color: C.aureus, fontSize: 16, cursor: "pointer", backdropFilter: "blur(8px)" }}>←</button>
 
       {msg && (
         <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 45, background: "rgba(42,13,13,0.95)", borderRadius: 20, padding: "6px 14px", border: `1px solid rgba(255,107,107,0.4)`, maxWidth: "85%", textAlign: "center" }}>
@@ -1245,7 +1245,7 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue,
                   <div style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.aureus}, ${C.ivory})`, borderRadius: 8, padding: "2px 6px", marginTop: 3, display: "inline-block", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>POPULAR</div>
                 )}
               </div>
-              {(v.busy_score || 0) === 0 && (v.report_count || 0) === 0
+              {v.has_baseline === false && (v.busy_score || 0) === 0 && (v.report_count || 0) === 0
                 ? <div style={{ fontSize: 9, color: C.aureus, opacity: 0.55, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>NO INTEL YET — TAP TO SCOUT</div>
                 : <div style={{ fontSize: 9, color: getBusyColor(v.busy_score || 0), fontWeight: 700, marginTop: 2, fontFamily: "sans-serif", letterSpacing: 0.5 }}>{getBusyLabel(v.busy_score || 0)} · {v.busy_score || 0}%</div>}
             </div>
