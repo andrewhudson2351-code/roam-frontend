@@ -80,6 +80,7 @@ const CITIES = [
   { name: "Saratoga Springs", lat: 43.0831, lng: -73.7846 },
   { name: "Asheville",        lat: 35.5951, lng: -82.5515 },
   { name: "Charleston",       lat: 32.7876, lng: -79.9403 },
+  { name: "Myrtle Beach",     lat: 33.6891, lng: -78.8867 },
 ];
 
 function getCityFromCoords(lat, lng) {
