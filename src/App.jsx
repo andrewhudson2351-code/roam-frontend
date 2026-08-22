@@ -131,6 +131,56 @@ function compressImage(file, maxDim = 1280, quality = 0.8) {
   });
 }
 
+// Bake a venue "sticker" overlay into a story photo (our in-house geofilter —
+// no Snap SDK). Draws on a canvas so the upload stays a plain JPEG.
+async function applyVenueSticker(dataUrl, venueName, style) {
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("unreadable image")); i.src = dataUrl; });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width; canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const W = canvas.width, H = canvas.height;
+  const pad = Math.round(W * 0.045);
+  const fs = Math.max(16, Math.round(W * 0.042));
+  const name = venueName.length > 26 ? venueName.slice(0, 25) + "…" : venueName;
+  const label = `📍 ${name}`;
+  ctx.textBaseline = "middle";
+  if (style === "banner") {
+    const bh = fs * 2.4;
+    ctx.fillStyle = "rgba(14,15,11,0.72)";
+    ctx.fillRect(0, H - bh, W, bh);
+    ctx.font = `700 ${fs}px Georgia, serif`;
+    ctx.fillStyle = "#E8D5A3";
+    ctx.fillText(label, pad, H - bh / 2);
+    ctx.font = `700 ${Math.round(fs * 0.72)}px sans-serif`;
+    ctx.fillStyle = "#C8A96E";
+    ctx.fillText("ROAMAN", W - pad - ctx.measureText("ROAMAN").width, H - bh / 2);
+  } else {
+    ctx.font = `700 ${fs}px Georgia, serif`;
+    const tw = ctx.measureText(label).width;
+    const ph = Math.round(fs * 1.9), pw = Math.round(tw + pad * 1.4), r = ph / 2;
+    const x = pad, y = H - pad - ph;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + pw, y, x + pw, y + ph, r);
+    ctx.arcTo(x + pw, y + ph, x, y + ph, r);
+    ctx.arcTo(x, y + ph, x, y, r);
+    ctx.arcTo(x, y, x + pw, y, r);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(14,15,11,0.78)";
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, Math.round(W * 0.004));
+    ctx.strokeStyle = "#C8A96E";
+    ctx.stroke();
+    ctx.fillStyle = "#E8D5A3";
+    ctx.fillText(label, x + pad * 0.7, y + ph / 2);
+    ctx.font = `700 ${Math.round(fs * 0.72)}px sans-serif`;
+    ctx.fillStyle = "rgba(232,213,163,0.9)";
+    ctx.fillText("ROAMAN", W - pad - ctx.measureText("ROAMAN").width, pad);
+  }
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
   if (diff < 60) return `${diff}s ago`;
@@ -436,7 +486,7 @@ function ResetPasswordScreen() {
 
 const HOUR_MARKS = [[0, "6am"], [6, "12pm"], [12, "6pm"], [18, "12am"]];
 
-function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowOnMap }) {
+function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowOnMap, highlightDealId }) {
   const [data, setData] = useState(null);
   const [weekOpen, setWeekOpen] = useState(false);
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -482,6 +532,22 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
     } catch { /* user dismissed the share sheet */ }
   }
 
+  async function shareDeal(d) {
+    const url = `https://app.roaman.app/d/${d.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: `${d.title} · ${v.name}`, url });
+      else { await navigator.clipboard.writeText(url); setMsg("Deal link copied!"); }
+    } catch { /* user dismissed the share sheet */ }
+  }
+
+  // Deep-linked deal (#/v/<venue>/d/<deal>): scroll its card into view once
+  // the deals have rendered.
+  useEffect(() => {
+    if (!highlightDealId || !data) return;
+    const t = setTimeout(() => document.getElementById(`deal-${highlightDealId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 400);
+    return () => clearTimeout(t);
+  }, [highlightDealId, data]);
+
   useEffect(() => {
     if (!msg) return;
     const t = setTimeout(() => setMsg(null), 4000);
@@ -507,6 +573,10 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
   const description = data?.place?.editorial_summary || v.description;
   const typical = data?.typical_today;
   const hasTypical = typical?.hour_data?.some(h => (h || 0) > 0);
+  const busyNow = data?.busy_now;
+  const deltaLabel = busyNow?.delta_pct == null ? null
+    : Math.abs(busyNow.delta_pct) < 10 ? "About as busy as usual right now"
+    : `~${Math.abs(busyNow.delta_pct)}% ${busyNow.delta_pct > 0 ? "busier" : "quieter"} than usual right now`;
   const friendsHere = data?.friends_here || [];
   const deals = data?.deals || [];
   const events = data?.events || [];
@@ -620,17 +690,37 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
           )}
           {hasTypical && (
             <div style={{ marginTop: 12 }}>
+              {deltaLabel && (
+                <div style={{ fontSize: 11, color: busyNow.delta_pct > 0 ? C.buzzing : C.aureus, fontFamily: "'EB Garamond', serif", marginBottom: 6 }}>{deltaLabel}</div>
+              )}
               <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 60 }}>
-                {typical.hour_data.map((val, i) => (
-                  <div key={i} style={{ flex: 1, height: `${Math.max(4, val || 0)}%`, borderRadius: 2, background: i === typical.now_index ? getBusyColor(score) : "rgba(200,169,110,0.28)", boxShadow: i === typical.now_index ? `0 0 6px ${getBusyColor(score)}` : "none" }} />
-                ))}
+                {typical.hour_data.map((val, i) => {
+                  const isNow = i === typical.now_index;
+                  const showReported = isNow && busyNow?.has_reports;
+                  return (
+                    <div key={i} style={{ flex: 1, position: "relative", height: "100%", display: "flex", alignItems: "flex-end" }}>
+                      <div style={{ width: "100%", height: `${Math.max(4, val || 0)}%`, borderRadius: 2, background: isNow ? getBusyColor(score) : "rgba(200,169,110,0.28)", boxShadow: isNow && !showReported ? `0 0 6px ${getBusyColor(score)}` : "none", opacity: showReported ? 0.45 : 1 }} />
+                      {showReported && (
+                        <div style={{ position: "absolute", left: -1, right: -1, bottom: `${Math.max(4, busyNow.live)}%`, height: 3, borderRadius: 2, background: C.buzzing, boxShadow: `0 0 8px ${C.buzzing}` }} />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div style={{ position: "relative", height: 12, marginTop: 4 }}>
                 {HOUR_MARKS.map(([i, label]) => (
                   <span key={label} style={{ position: "absolute", left: `${(i / 24) * 100}%`, fontSize: 8, color: C.marble, opacity: 0.4, fontFamily: "sans-serif" }}>{label}</span>
                 ))}
               </div>
-              <div style={{ fontSize: 9, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", letterSpacing: 1 }}>TYPICAL CROWD TODAY</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 9, color: C.marble, opacity: 0.35, fontFamily: "sans-serif", letterSpacing: 1 }}>{typical.source === "roam" ? "TYPICAL CROWD TODAY · FROM ROAMER REPORTS" : "TYPICAL CROWD TODAY"}</div>
+                {busyNow?.has_reports && (
+                  <div style={{ fontSize: 8, fontFamily: "sans-serif", letterSpacing: 0.5, display: "flex", gap: 8 }}>
+                    <span style={{ color: C.buzzing }}>▬ reported now</span>
+                    <span style={{ color: C.marble, opacity: 0.45 }}>▮ typical</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <div style={{ fontSize: 9, color: C.marble, opacity: 0.4, margin: "14px 0 8px", fontFamily: "sans-serif", letterSpacing: 1.5 }}>HOW BUSY IS IT RIGHT NOW?</div>
@@ -665,7 +755,7 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
             <div style={sectionLabel}>ACTIVE DEALS</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {deals.map(d => (
-                <div key={d.id} style={{ background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid rgba(200,169,110,0.18)` }}>
+                <div key={d.id} id={`deal-${d.id}`} style={{ background: "rgba(200,169,110,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid ${d.id === highlightDealId ? C.aureus : "rgba(200,169,110,0.18)"}`, boxShadow: d.id === highlightDealId ? "0 0 14px rgba(200,169,110,0.45)" : "none" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</span>
                     {d.recur_days && d.is_live_now && <span style={{ fontSize: 8, color: C.carbon, background: `linear-gradient(135deg, ${C.buzzing}, #7FE3A8)`, borderRadius: 6, padding: "2px 6px", fontFamily: "sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>LIVE NOW</span>}
@@ -683,10 +773,16 @@ function VenueDetailScreen({ venue, token, onClose, onReported, onClaim, onShowO
                       ))}
                     </div>
                   )}
-                  <button onClick={() => toggleSaveDeal(d.id)}
-                    style={{ marginTop: 8, borderRadius: 10, padding: "5px 12px", fontSize: 10, fontFamily: "sans-serif", letterSpacing: 0.5, cursor: "pointer", border: `1px solid ${savedDeals.has(d.id) ? C.aureus : "rgba(200,169,110,0.25)"}`, background: savedDeals.has(d.id) ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", color: savedDeals.has(d.id) ? C.carbon : C.aureus, fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>
-                    {savedDeals.has(d.id) ? "★ Saved" : "☆ Save deal"}
-                  </button>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button onClick={() => toggleSaveDeal(d.id)}
+                      style={{ borderRadius: 10, padding: "5px 12px", fontSize: 10, fontFamily: "sans-serif", letterSpacing: 0.5, cursor: "pointer", border: `1px solid ${savedDeals.has(d.id) ? C.aureus : "rgba(200,169,110,0.25)"}`, background: savedDeals.has(d.id) ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "transparent", color: savedDeals.has(d.id) ? C.carbon : C.aureus, fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>
+                      {savedDeals.has(d.id) ? "★ Saved" : "☆ Save deal"}
+                    </button>
+                    <button onClick={() => shareDeal(d)}
+                      style={{ borderRadius: 10, padding: "5px 12px", fontSize: 10, fontFamily: "sans-serif", letterSpacing: 0.5, cursor: "pointer", border: "1px solid rgba(200,169,110,0.25)", background: "transparent", color: C.aureus }}>
+                      ↗ Share
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1191,6 +1287,16 @@ function HeatmapScreen({ token, user, currentCity, setCurrentCity, onClaimVenue,
               </div>
             </Marker>
           ))}
+          {/* Paid-plan logo pins: marker_logo_url is only present in /bounds
+              rows when the venue's plan is paid AND the logo was approved. */}
+          {venues.filter(v => v.marker_logo_url).map(v => (
+            <Marker key={`logo-${v.id}`} latitude={parseFloat(v.latitude)} longitude={parseFloat(v.longitude)} anchor="center">
+              <div onClick={e => { e.stopPropagation(); setDetailVenue(v); }}
+                style={{ width: 30, height: 30, borderRadius: "50%", cursor: "pointer", border: `2px solid ${C.aureus}`, boxShadow: `0 0 0 2px rgba(14,15,11,0.9), 0 2px 8px rgba(0,0,0,0.6)`, overflow: "hidden", background: C.obsidian }}>
+                <img src={v.marker_logo_url} alt="" onError={e => { e.currentTarget.parentElement.style.display = "none"; }} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              </div>
+            </Marker>
+          ))}
           {friendPins.map(f => (
             <Marker key={f.friendship_id} latitude={parseFloat(f.location.latitude)} longitude={parseFloat(f.location.longitude)} anchor="center">
               <div onClick={e => { e.stopPropagation(); setActiveFriend(f); }}
@@ -1427,7 +1533,7 @@ function FriendsScreen({ token, onClose }) {
   );
 }
 
-function StoriesScreen({ token }) {
+function StoriesScreen({ token, draft, onDraftConsumed }) {
   const [stories, setStories] = useState([]);
   const [active, setActive] = useState(null);
   const [liked, setLiked] = useState({});
@@ -1442,7 +1548,21 @@ function StoriesScreen({ token }) {
   const [feedError, setFeedError] = useState("");
   const [photo, setPhoto] = useState(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [dealRef, setDealRef] = useState(null);
+  const [sticker, setSticker] = useState(null);
   const fileRef = useRef(null);
+
+  // "Post to story" from a deal card pre-fills the composer. The caption
+  // snapshots the offer text, so the story stands alone if the deal ends.
+  useEffect(() => {
+    if (!draft) return;
+    if (draft.venue) { setSelectedVenue(draft.venue); setVenueQuery(""); }
+    if (draft.deal) {
+      setDealRef(draft.deal);
+      setNewCaption(draft.deal.detail ? `${draft.deal.title} — ${draft.deal.detail}` : draft.deal.title);
+    }
+    onDraftConsumed?.();
+  }, [draft]);
 
   async function onPhotoPicked(e) {
     const file = e.target.files?.[0];
@@ -1479,16 +1599,21 @@ function StoriesScreen({ token }) {
     try {
       let media_url = null;
       if (photo) {
-        const up = await apiFetch("/api/stories/upload", { method: "POST", body: JSON.stringify({ image: photo }) }, token);
+        let toUpload = photo;
+        if (sticker) {
+          try { toUpload = await applyVenueSticker(photo, selectedVenue.name, sticker); }
+          catch { /* sticker failed — post the raw photo */ }
+        }
+        const up = await apiFetch("/api/stories/upload", { method: "POST", body: JSON.stringify({ image: toUpload }) }, token);
         if (up?.error) { setPostError(up.error); setPosting(false); return; }
         media_url = up.media_url;
       }
-      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: storyVisibility, media_url }) }, token);
+      const result = await apiFetch("/api/stories", { method: "POST", body: JSON.stringify({ venue_id: selectedVenue.id, caption: newCaption, emoji, visibility: storyVisibility, media_url, deal_id: dealRef?.id || null }) }, token);
       if (result?.error) { setPostError(result.error); setPosting(false); return; }
       const data = await apiFetch("/api/stories", {}, token);
       if (Array.isArray(data)) { setStories(data); setFeedError(""); }
       else if (data?.error) setFeedError(data.error);
-      setNewCaption(""); setSelectedVenue(null); setVenueQuery(""); setPhoto(null);
+      setNewCaption(""); setSelectedVenue(null); setVenueQuery(""); setPhoto(null); setDealRef(null); setSticker(null);
     } catch {
       setPostError("Failed to post story. Try again.");
     }
@@ -1505,10 +1630,18 @@ function StoriesScreen({ token }) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.mapBg }}>
       <div style={{ padding: "12px 16px 8px", borderBottom: `1px solid rgba(200,169,110,0.1)` }}>
         {selectedVenue ? (
-          <div onClick={() => { setSelectedVenue(null); setVenueQuery(""); }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "5px 12px", borderRadius: 16, background: "rgba(200,169,110,0.15)", border: `1px solid rgba(200,169,110,0.4)`, cursor: "pointer" }}>
-            <span style={{ fontSize: 12, color: C.aureus, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>📍 {selectedVenue.name}</span>
-            <span style={{ fontSize: 11, color: C.aureus, opacity: 0.7 }}>✕</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            <div onClick={() => { setSelectedVenue(null); setVenueQuery(""); setDealRef(null); setSticker(null); }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 16, background: "rgba(200,169,110,0.15)", border: `1px solid rgba(200,169,110,0.4)`, cursor: "pointer" }}>
+              <span style={{ fontSize: 12, color: C.aureus, fontFamily: "'Playfair Display', serif", fontWeight: 700 }}>📍 {selectedVenue.name}</span>
+              <span style={{ fontSize: 11, color: C.aureus, opacity: 0.7 }}>✕</span>
+            </div>
+            {dealRef && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 16, background: "rgba(200,169,110,0.08)", border: "1px dashed rgba(200,169,110,0.4)" }}>
+                <span style={{ fontSize: 11, color: C.aureus, fontFamily: "'EB Garamond', serif" }}>✦ {dealRef.title}</span>
+                <span onClick={() => setDealRef(null)} style={{ fontSize: 11, color: C.aureus, opacity: 0.7, cursor: "pointer" }}>✕</span>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ marginBottom: 8, position: "relative" }}>
@@ -1540,7 +1673,16 @@ function StoriesScreen({ token }) {
         {photo && (
           <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
             <img src={photo} alt="" style={{ height: 72, borderRadius: 12, border: `1px solid rgba(200,169,110,0.3)`, display: "block" }} />
-            <button onClick={() => setPhoto(null)} style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.obsidian, color: C.aureus, fontSize: 11, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            <button onClick={() => { setPhoto(null); setSticker(null); }} style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.obsidian, color: C.aureus, fontSize: 11, cursor: "pointer", lineHeight: 1 }}>✕</button>
+          </div>
+        )}
+        {photo && selectedVenue && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <span style={{ fontSize: 9, color: C.marble, opacity: 0.45, fontFamily: "sans-serif", letterSpacing: 1 }}>VENUE STICKER</span>
+            {[[null, "Off"], ["pill", "📍 Pill"], ["banner", "📍 Banner"]].map(([val, label]) => (
+              <button key={label} onClick={() => setSticker(val)}
+                style={{ padding: "4px 10px", borderRadius: 12, fontSize: 10, fontFamily: "sans-serif", cursor: "pointer", border: `1px solid ${sticker === val ? C.aureus : "rgba(200,169,110,0.2)"}`, background: sticker === val ? `linear-gradient(135deg, ${C.aureus}, ${C.ivory})` : "rgba(200,169,110,0.05)", color: sticker === val ? C.carbon : C.aureus, letterSpacing: 0.5 }}>{label}</button>
+            ))}
           </div>
         )}
         <div style={{ display: "flex", gap: 8 }}>
@@ -1621,30 +1763,96 @@ function SplitMapView({ items, renderTile, onOpenVenue, emptyMsg }) {
   const tileRefs = useRef([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const rafRef = useRef(0);
+  // Panning re-filters the tile strip to the visible area (plus the nearest
+  // few, so a tight zoom is never empty). Our own flyTo animations must not
+  // re-trigger the filter or the two feed back into each other.
+  const [viewFilter, setViewFilter] = useState(null);
+  const [userLoc, setUserLoc] = useState(null);
+  const programmaticRef = useRef(false);
+  const interactedRef = useRef(false);
+  const suppressFlyRef = useRef(false);
+  const moveTimerRef = useRef(0);
 
-  // One marker per unique, mappable venue.
+  // On open, center on the user — unless they've already panned somewhere.
+  useEffect(() => {
+    let stale = false;
+    getCurrentPositionUnified({ enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 })
+      .then(pos => {
+        if (stale) return;
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserLoc(loc);
+        if (!interactedRef.current) {
+          programmaticRef.current = true;
+          mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 13, duration: 600 });
+        }
+      })
+      .catch(() => { /* no location — stay on the first venue */ });
+    return () => { stale = true; };
+  }, []);
+
+  const mappable = useMemo(() => (items || []).filter(it => it.venues && !isNaN(parseFloat(it.venues.latitude)) && !isNaN(parseFloat(it.venues.longitude))), [items]);
+
+  // Tiles for the current viewport, nearest-to-center first.
+  const { visibleItems, inViewCount } = useMemo(() => {
+    if (!viewFilter) return { visibleItems: mappable, inViewCount: mappable.length };
+    const { sw, ne, center } = viewFilter;
+    const dist = it => {
+      const dLat = parseFloat(it.venues.latitude) - center.lat;
+      const dLng = (parseFloat(it.venues.longitude) - center.lng) * Math.cos(center.lat * Math.PI / 180);
+      return dLat * dLat + dLng * dLng;
+    };
+    const inView = [], rest = [];
+    for (const it of mappable) {
+      const lat = parseFloat(it.venues.latitude), lng = parseFloat(it.venues.longitude);
+      (lat >= sw.lat && lat <= ne.lat && lng >= sw.lng && lng <= ne.lng ? inView : rest).push(it);
+    }
+    inView.sort((a, b) => dist(a) - dist(b));
+    if (inView.length >= 3) return { visibleItems: inView, inViewCount: inView.length };
+    rest.sort((a, b) => dist(a) - dist(b));
+    return { visibleItems: [...inView, ...rest.slice(0, 3 - inView.length)], inViewCount: inView.length };
+  }, [mappable, viewFilter]);
+
+  // One marker per unique venue in the strip.
   const venues = useMemo(() => {
     const seen = new Set(); const out = [];
-    for (const it of items || []) {
+    for (const it of visibleItems) {
       const v = it.venues;
-      if (!v || seen.has(v.id) || isNaN(parseFloat(v.latitude)) || isNaN(parseFloat(v.longitude))) continue;
+      if (seen.has(v.id)) continue;
       seen.add(v.id); out.push(v);
     }
     return out;
-  }, [items]);
+  }, [visibleItems]);
 
-  const activeVenueId = items?.[activeIdx]?.venues?.id;
+  const activeVenueId = visibleItems?.[activeIdx]?.venues?.id;
 
-  // Reset to the first tile whenever the item set changes (filter/day/search).
-  useEffect(() => { setActiveIdx(0); stripRef.current?.scrollTo({ left: 0 }); }, [items]);
+  // Reset to the first tile whenever the tile set changes (filter/day/search/
+  // pan). Suppress the fly-to below — after a pan it would fight the user.
+  useEffect(() => { suppressFlyRef.current = true; setActiveIdx(0); tileRefs.current.length = visibleItems.length; stripRef.current?.scrollTo({ left: 0 }); }, [visibleItems]);
 
-  // Fly to the active tile's venue.
+  // Fly to the active tile's venue (strip scrolls and pin taps only).
   useEffect(() => {
-    const v = items?.[activeIdx]?.venues;
+    if (suppressFlyRef.current) { suppressFlyRef.current = false; return; }
+    const v = visibleItems?.[activeIdx]?.venues;
     if (v && !isNaN(parseFloat(v.latitude))) {
+      programmaticRef.current = true;
       mapRef.current?.flyTo({ center: [parseFloat(v.longitude), parseFloat(v.latitude)], zoom: 14.5, duration: 550 });
     }
-  }, [activeIdx, items]);
+  }, [activeIdx, visibleItems]);
+
+  function handleMoveEnd() {
+    if (programmaticRef.current) { programmaticRef.current = false; return; }
+    interactedRef.current = true;
+    clearTimeout(moveTimerRef.current);
+    moveTimerRef.current = setTimeout(() => {
+      const map = mapRef.current; if (!map) return;
+      const b = map.getBounds(); const c = map.getCenter();
+      setViewFilter({
+        sw: { lat: b.getSouth(), lng: b.getWest() },
+        ne: { lat: b.getNorth(), lng: b.getEast() },
+        center: { lat: c.lat, lng: c.lng },
+      });
+    }, 300);
+  }
 
   function onStripScroll() {
     cancelAnimationFrame(rafRef.current);
@@ -1663,21 +1871,22 @@ function SplitMapView({ items, renderTile, onOpenVenue, emptyMsg }) {
   }
 
   function focusVenue(venueId) {
-    const idx = items.findIndex(it => it.venues?.id === venueId);
+    const idx = visibleItems.findIndex(it => it.venues?.id === venueId);
     if (idx >= 0) tileRefs.current[idx]?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   }
 
-  if (!items || items.length === 0) {
+  if (mappable.length === 0) {
     return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: C.marble, opacity: 0.4, fontSize: 13, fontFamily: "'EB Garamond', serif", padding: 20, textAlign: "center" }}>{emptyMsg}</div>;
   }
-  const first = items[0].venues;
-  const center = { lat: parseFloat(first?.latitude) || 35.2271, lng: parseFloat(first?.longitude) || -80.8431 };
+  const first = mappable[0].venues;
+  const center = userLoc || { lat: parseFloat(first?.latitude) || 35.2271, lng: parseFloat(first?.longitude) || -80.8431 };
 
   return (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
       <MapboxMap ref={mapRef} mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
         initialViewState={{ latitude: center.lat, longitude: center.lng, zoom: 13.5 }}
         mapStyle="mapbox://styles/mapbox/dark-v11" style={{ position: "absolute", inset: 0 }}
+        onMoveEnd={handleMoveEnd}
         onLoad={e => e.target.resize()}>
         {venues.map(v => {
           const active = v.id === activeVenueId;
@@ -1694,10 +1903,18 @@ function SplitMapView({ items, renderTile, onOpenVenue, emptyMsg }) {
             </Marker>
           );
         })}
+        {userLoc && (
+          <Marker latitude={userLoc.lat} longitude={userLoc.lng} anchor="center">
+            <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.ivory, border: `3px solid ${C.aureus}`, boxShadow: `0 0 0 2px rgba(14,15,11,0.9), 0 0 10px ${C.aureus}` }} />
+          </Marker>
+        )}
       </MapboxMap>
+      {viewFilter && inViewCount === 0 && (
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", background: "rgba(14,15,11,0.88)", border: "1px solid rgba(200,169,110,0.3)", borderRadius: 16, padding: "5px 12px", fontSize: 10, color: C.aureus, fontFamily: "'EB Garamond', serif", whiteSpace: "nowrap" }}>Nothing in view — showing the nearest spots</div>
+      )}
       <div ref={stripRef} onScroll={onStripScroll}
         style={{ position: "absolute", bottom: 12, left: 0, right: 0, display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", padding: "0 24px", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
-        {items.map((it, i) => (
+        {visibleItems.map((it, i) => (
           <div key={it.id ?? i} ref={el => (tileRefs.current[i] = el)}
             onClick={() => { if (i === activeIdx && it.venues) onOpenVenue?.(it.venues); }}
             style={{ flex: "0 0 calc(100% - 56px)", scrollSnapAlign: "center", cursor: it.venues ? "pointer" : "default",
@@ -1712,7 +1929,7 @@ function SplitMapView({ items, renderTile, onOpenVenue, emptyMsg }) {
   );
 }
 
-function DealsScreen({ token, city, onClaimVenue, onShowOnMap }) {
+function DealsScreen({ token, city, onClaimVenue, onShowOnMap, onPostToStory }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tagFilter, setTagFilter] = useState(null);
@@ -1734,6 +1951,14 @@ function DealsScreen({ token, city, onClaimVenue, onShowOnMap }) {
     flip();
     const r = await apiFetch(`/api/deals/${id}/save`, { method: "POST" }, token).catch(() => null);
     if (typeof r?.saved !== "boolean") flip();
+  }
+
+  async function shareDeal(d) {
+    const url = `https://app.roaman.app/d/${d.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: d.venues?.name ? `${d.title} · ${d.venues.name}` : d.title, url });
+      else await navigator.clipboard.writeText(url);
+    } catch { /* user dismissed the share sheet */ }
   }
 
   useEffect(() => {
@@ -1792,7 +2017,10 @@ function DealsScreen({ token, city, onClaimVenue, onShowOnMap }) {
               <div style={{ fontSize: 15, fontWeight: 700, color: C.marble, fontFamily: "'Playfair Display', serif" }}>{d.title}</div>
               {d.detail && <div style={{ fontSize: 11, color: C.marble, opacity: 0.6, fontFamily: "'EB Garamond', serif", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.detail}</div>}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                <button onClick={e => { e.stopPropagation(); toggleSaveDeal(d.id); }} style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: C.aureus, opacity: savedDeals.has(d.id) ? 1 : 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer", fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>{savedDeals.has(d.id) ? "★ Saved" : "☆ Save"}</button>
+                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button onClick={e => { e.stopPropagation(); toggleSaveDeal(d.id); }} style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: C.aureus, opacity: savedDeals.has(d.id) ? 1 : 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer", fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>{savedDeals.has(d.id) ? "★ Saved" : "☆ Save"}</button>
+                  <button onClick={e => { e.stopPropagation(); shareDeal(d); }} style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer" }}>↗ Share</button>
+                </span>
                 {d.source === "scraped" ? (
                   <span style={{ fontSize: 8, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
                 ) : (
@@ -1841,6 +2069,8 @@ function DealsScreen({ token, city, onClaimVenue, onShowOnMap }) {
                 <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <button onClick={() => { if (!d.venues) return; track("deal_click", d.venue_id, d.id, token); setDetailVenue(d.venues); }} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: d.venues ? "pointer" : "default" }}>📍 View venue</button>
                   <button onClick={() => toggleSaveDeal(d.id)} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: savedDeals.has(d.id) ? 1 : 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer", fontWeight: savedDeals.has(d.id) ? 700 : 400 }}>{savedDeals.has(d.id) ? "★ Saved" : "☆ Save"}</button>
+                  <button onClick={() => shareDeal(d)} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer" }}>↗ Share</button>
+                  {onPostToStory && <button onClick={() => onPostToStory(d)} style={{ background: "none", border: "none", padding: 0, fontSize: 10, color: C.aureus, opacity: 0.6, fontFamily: "'EB Garamond', serif", cursor: "pointer" }}>📸 Story</button>}
                 </span>
                 {d.source === "scraped" ? (
                   <span style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid rgba(232,230,225,0.18)", fontSize: 9, color: C.marble, opacity: 0.55, fontFamily: "sans-serif", letterSpacing: 1, textTransform: "uppercase" }}>Not owner verified</span>
@@ -3184,12 +3414,14 @@ export default function RoamApp() {
   }, [currentToken]);
 
   // Deep links: app.roaman.app/#/v/<venue_id> — share links, and push taps
-  // (which set the hash below). Closing clears the hash so back feels normal.
+  // (which set the hash below). Deal shares append /d/<deal_id> so the venue
+  // sheet opens with that deal highlighted. Closing clears the hash.
   const [linkVenue, setLinkVenue] = useState(null);
+  const [storyDraft, setStoryDraft] = useState(null);
   useEffect(() => {
     function handleHash() {
-      const m = window.location.hash.match(/^#\/v\/([0-9a-f-]{36})$/i);
-      if (m) setLinkVenue({ id: m[1], name: "" });
+      const m = window.location.hash.match(/^#\/v\/([0-9a-f-]{36})(?:\/d\/([0-9a-f-]{36}))?$/i);
+      if (m) setLinkVenue({ id: m[1], name: "", dealId: m[2] || null });
     }
     handleHash();
     window.addEventListener("hashchange", handleHash);
@@ -3276,12 +3508,12 @@ export default function RoamApp() {
           {!currentUser ? <AuthScreen onAuth={handleAuth} /> : (
             <>
               {tab === "map"       && <HeatmapScreen token={currentToken} user={currentUser} currentCity={currentCity} setCurrentCity={setCurrentCity} resetKey={tabResetKey} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} />}
-              {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} />}
-              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} onShowOnMap={t => { pendingMapFocus = t; setTab("map"); }} />}
+              {tab === "stories"   && <StoriesScreen token={currentToken} user={currentUser} draft={storyDraft} onDraftConsumed={() => setStoryDraft(null)} />}
+              {tab === "deals"     && <DealsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} onShowOnMap={t => { pendingMapFocus = t; setTab("map"); }} onPostToStory={d => { setStoryDraft({ venue: d.venues ? { id: d.venues.id, name: d.venues.name, neighborhood: d.venues.neighborhood, city: d.venues.city } : null, deal: { id: d.id, title: d.title, detail: d.detail } }); setTab("stories"); }} />}
               {tab === "events"    && <EventsScreen token={currentToken} user={currentUser} city={currentCity} onClaimVenue={v => { setClaimRequest(v); setTab("dashboard"); }} onShowOnMap={t => { pendingMapFocus = t; setTab("map"); }} />}
               {tab === "dashboard" && <DashboardScreen token={currentToken} user={currentUser} claimRequest={claimRequest} onClaimRequestHandled={() => setClaimRequest(null)} />}
               {tab === "settings"  && <ProfileScreen token={currentToken} user={currentUser} onLogout={handleLogout} onUserUpdate={u => { setUser(u); localStorage.setItem("roam_user", JSON.stringify(u)); }} />}
-              {linkVenue && <VenueDetailScreen venue={linkVenue} token={currentToken}
+              {linkVenue && <VenueDetailScreen venue={linkVenue} token={currentToken} highlightDealId={linkVenue.dealId}
                 onClose={() => { setLinkVenue(null); if (window.location.hash.startsWith("#/v/")) history.replaceState(null, "", window.location.pathname + window.location.search); }}
                 onShowOnMap={t => { pendingMapFocus = t; setLinkVenue(null); setTab("map"); }}
                 onClaim={v => { setLinkVenue(null); setClaimRequest(v); setTab("dashboard"); }} />}
